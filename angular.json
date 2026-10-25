@@ -82,9 +82,7 @@
                             "src/favicon.ico",
                             "src/assets"
                         ],
-                        "styles": [
-                            "src/assets/styles.scss"
-                        ],
+                        "styles": [],
                         "scripts": []
                     }
                 }
