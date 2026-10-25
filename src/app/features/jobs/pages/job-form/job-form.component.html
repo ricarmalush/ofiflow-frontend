@@ -1,0 +1,84 @@
+<div class="card">
+    <div class="flex items-center gap-3 mb-6">
+        <div class="font-semibold text-xl">{{ jobId() ? 'Editar trabajo' : 'Nuevo trabajo' }}</div>
+        @if (status(); as s) {
+            <p-tag [value]="statusLabel(s)" severity="info" />
+        }
+    </div>
+
+    @if (errorMessage()) {
+        <p-message severity="error" styleClass="mb-6">{{ errorMessage() }}</p-message>
+    }
+
+    <form [formGroup]="form" (ngSubmit)="save()" class="flex flex-col gap-6 max-w-2xl">
+        <div class="flex flex-col gap-2">
+            <label for="customer" class="font-medium">Cliente *</label>
+            <p-select
+                inputId="customer"
+                formControlName="customerId"
+                [options]="customers()"
+                optionLabel="name"
+                optionValue="id"
+                [filter]="true"
+                filterBy="name"
+                placeholder="Elige un cliente"
+                [invalid]="hasError('customerId')"
+                styleClass="w-full"
+            />
+            @if (hasError('customerId')) {
+                <small class="text-red-500">{{ errorText('customerId') }}</small>
+            } @else if (jobId()) {
+                <small class="text-muted-color">El cliente no se puede cambiar después de crear el trabajo.</small>
+            }
+        </div>
+
+        <div class="flex flex-col gap-2">
+            <label for="title" class="font-medium">Título *</label>
+            <input pInputText id="title" formControlName="title" [maxlength]="limits.titleMaxLength" [invalid]="hasError('title')" />
+            @if (hasError('title')) {
+                <small class="text-red-500">{{ errorText('title') }}</small>
+            }
+        </div>
+
+        <div class="flex flex-col gap-2">
+            <label for="description" class="font-medium">Descripción</label>
+            <textarea pTextarea id="description" formControlName="description" rows="4" [maxlength]="limits.descriptionMaxLength" [invalid]="hasError('description')"></textarea>
+            @if (hasError('description')) {
+                <small class="text-red-500">{{ errorText('description') }}</small>
+            }
+        </div>
+
+        <div class="flex flex-col gap-2">
+            <label for="priority" class="font-medium">Prioridad</label>
+            <p-select inputId="priority" formControlName="priority" [options]="priorityOptions" optionLabel="label" optionValue="value" styleClass="w-full md:w-56" />
+        </div>
+
+        <div class="flex gap-2">
+            <p-button type="submit" label="Guardar" icon="pi pi-check" [loading]="saving()" [disabled]="loading() || form.disabled" />
+            <p-button type="button" label="Volver" severity="secondary" [text]="true" routerLink="/jobs" />
+        </div>
+    </form>
+
+    @if (jobId() && canAssign) {
+        <div class="border-t border-surface mt-8 pt-6 max-w-2xl">
+            <div class="font-semibold text-lg mb-4">Asignación</div>
+            <div class="flex flex-wrap gap-2 items-center">
+                <p-select
+                    inputId="assignee"
+                    [options]="members()"
+                    optionLabel="name"
+                    optionValue="id"
+                    placeholder="Sin asignar"
+                    [(ngModel)]="assigneeId"
+                    [ngModelOptions]="{ standalone: true }"
+                    styleClass="w-full md:w-80"
+                >
+                    <ng-template #item let-member>
+                        <div>{{ member.name }} <span class="text-muted-color text-sm">· {{ member.role }}</span></div>
+                    </ng-template>
+                </p-select>
+                <p-button type="button" label="Asignar" icon="pi pi-user-plus" [loading]="assigning()" [disabled]="!assigneeChanged()" (onClick)="assign()" />
+            </div>
+        </div>
+    }
+</div>

@@ -1,0 +1,90 @@
+<div class="card">
+    <p-toolbar styleClass="mb-6">
+        <ng-template #start>
+            <div class="font-semibold text-xl">Trabajos</div>
+        </ng-template>
+        <ng-template #end>
+            @if (canWrite) {
+                <p-button label="Nuevo trabajo" icon="pi pi-plus" routerLink="/jobs/new" />
+            }
+        </ng-template>
+    </p-toolbar>
+
+    @if (errorMessage()) {
+        <p-message severity="error" styleClass="mb-4">{{ errorMessage() }}</p-message>
+    }
+
+    <p-table
+        #table
+        [value]="rows()"
+        [loading]="loading()"
+        [rows]="10"
+        [paginator]="true"
+        [rowHover]="true"
+        [stripedRows]="true"
+        [globalFilterFields]="['title', 'customerName', 'assigneeName']"
+        dataKey="id"
+        currentPageReportTemplate="{first}-{last} de {totalRecords}"
+        [showCurrentPageReport]="true"
+    >
+        <ng-template #caption>
+            <div class="flex flex-wrap gap-4">
+                <p-iconfield>
+                    <p-inputicon styleClass="pi pi-search" />
+                    <input pInputText type="text" placeholder="Buscar por título, cliente o asignado" class="w-full md:w-80" (input)="onSearch(table, $event)" />
+                </p-iconfield>
+                <p-select
+                    [options]="statusOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Todos los estados"
+                    [showClear]="true"
+                    [ngModel]="statusFilter()"
+                    (ngModelChange)="statusFilter.set($event)"
+                    styleClass="w-full md:w-56"
+                />
+            </div>
+        </ng-template>
+
+        <ng-template #header>
+            <tr>
+                <th pSortableColumn="title">Título <p-sortIcon field="title" /></th>
+                <th pSortableColumn="customerName">Cliente <p-sortIcon field="customerName" /></th>
+                <th pSortableColumn="status">Estado <p-sortIcon field="status" /></th>
+                <th pSortableColumn="priority">Prioridad <p-sortIcon field="priority" /></th>
+                <th>Asignado a</th>
+                <th class="w-48"></th>
+            </tr>
+        </ng-template>
+
+        <ng-template #body let-job>
+            <tr>
+                <td>{{ job.title }}</td>
+                <td>{{ job.customerName }}</td>
+                <td><p-tag [value]="statusLabel(job.status)" [severity]="statusSeverity(job.status)" /></td>
+                <td><p-tag [value]="priorityLabel(job.priority)" [severity]="prioritySeverity(job.priority)" /></td>
+                <td>{{ job.assigneeName }}</td>
+                <td class="text-right whitespace-nowrap">
+                    @if (canExecute && canStart(job.status)) {
+                        <p-button icon="pi pi-play" [rounded]="true" [text]="true" ariaLabel="Iniciar"[disabled]="busyJobId() === job.id" (onClick)="run(job, 'start')" />
+                    }
+                    @if (canExecute && canComplete(job.status)) {
+                        <p-button icon="pi pi-check" severity="success" [rounded]="true" [text]="true" ariaLabel="Completar" [disabled]="busyJobId() === job.id" (onClick)="run(job, 'complete')" />
+                    }
+                    @if (canWrite) {
+                        <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" ariaLabel="Editar" [routerLink]="['/jobs', job.id]" />
+                    }
+                    @if (canCancelJobs && canCancel(job.status)) {
+                        <p-button icon="pi pi-times" severity="danger" [rounded]="true" [text]="true" ariaLabel="Cancelar" [disabled]="busyJobId() === job.id" (onClick)="run(job, 'cancel')" />
+                    }
+                </td>
+            </tr>
+        </ng-template>
+
+        <ng-template #emptymessage>
+            <tr>
+                <td colspan="6" class="text-center text-muted-color py-8">No hay trabajos.</td>
+            </tr>
+        </ng-template>
+    </p-table>
+</div>
