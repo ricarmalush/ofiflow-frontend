@@ -54,6 +54,8 @@ describe('CustomerService', () => {
     it('encodes the id so it cannot change the path', () => {
         service.get('../users').subscribe();
 
-        httpMock.expectOne(`${url}/..%2Fusers`).flush({});
+        const req = httpMock.expectOne(`${url}/..%2Fusers`);
+        expect(req.request.url).not.toContain('/users');
+        req.flush({});
     });
 });
