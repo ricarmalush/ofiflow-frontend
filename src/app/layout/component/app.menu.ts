@@ -42,6 +42,10 @@ export class AppMenu {
             {
                 label: 'Administración',
                 items: [...(can('Users.Read') ? [{ label: 'Equipo', icon: 'pi pi-fw pi-id-card', routerLink: ['/team'] }] : [])]
+            },
+            {
+                label: 'Mi cuenta',
+                items: [...(can('Mfa.Manage') ? [{ label: 'Seguridad', icon: 'pi pi-fw pi-shield', routerLink: ['/account/security'] }] : [])]
             }
         ];
         return sections.filter((section) => section.items?.length);

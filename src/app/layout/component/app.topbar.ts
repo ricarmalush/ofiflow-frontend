@@ -73,9 +73,9 @@ import { AuthService } from '@/app/core/services/auth';
                         <i class="pi pi-inbox"></i>
                         <span>Messages</span>
                     </button>
-                    <button type="button" class="layout-topbar-action">
+                    <button type="button" class="layout-topbar-action" routerLink="/account/security">
                         <i class="pi pi-user"></i>
-                        <span>Profile</span>
+                        <span>Mi cuenta</span>
                     </button>
                     <button type="button" class="layout-topbar-action" (click)="authService.logout()">
                         <i class="pi pi-sign-out"></i>

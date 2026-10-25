@@ -111,9 +111,11 @@ export class AuthService {
 
     // Solo local: la API no tiene endpoint de logout. El refresh token sigue siendo válido en el
     // servidor hasta que caduca (pendiente en la API); aquí deja de estar en el navegador.
-    logout(): void {
+    // info: un aviso para la pantalla de login (p. ej. "se cerraron tus sesiones"). Viaja en el
+    // estado de la navegación, no en la URL.
+    logout(info?: string): void {
         this.clearSession();
-        this.router.navigate(['/auth/login']);
+        this.router.navigate(['/auth/login'], info ? { state: { info } } : undefined);
     }
 
     private clearSession(): void {

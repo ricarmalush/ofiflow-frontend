@@ -113,8 +113,9 @@ export class Login {
     readonly step = signal<'credentials' | 'mfa'>('credentials');
     readonly loading = signal(false);
     readonly error = signal<string | null>(null);
-    // Llega desde la página de aceptar invitación (estado de la navegación, no la URL).
-    readonly info = signal<string | null>(history.state?.invitationAccepted ? 'Cuenta creada. Ya puedes entrar con tu email y tu contraseña.' : null);
+    // Aviso de otra pantalla (cuenta creada, sesiones cerradas...). Llega en el estado de la
+    // navegación, no en la URL, y se pinta como texto.
+    readonly info = signal<string | null>(typeof history.state?.info === 'string' ? history.state.info : null);
 
     // El desafío vive solo en memoria: es de un solo uso y caduca en minutos, no se guarda.
     private challenge: string | null = null;

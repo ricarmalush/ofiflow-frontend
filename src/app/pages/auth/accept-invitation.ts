@@ -113,7 +113,7 @@ export class AcceptInvitation implements OnInit {
                 return;
             }
             this.token = null;
-            this.router.navigate(['/auth/login'], { state: { invitationAccepted: true } });
+            this.router.navigate(['/auth/login'], { state: { info: 'Cuenta creada. Ya puedes entrar con tu email y tu contraseña.' } });
         });
     }
 }

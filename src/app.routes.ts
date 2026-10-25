@@ -46,6 +46,11 @@ export const appRoutes: Routes = [
                 path: 'team',
                 canActivate: [permissionGuard('Users.Read')],
                 loadComponent: () => import('./app/features/team/pages/team/team.component').then((c) => c.TeamComponent)
+            },
+            {
+                path: 'account/security',
+                canActivate: [permissionGuard('Mfa.Manage')],
+                loadComponent: () => import('./app/features/account/pages/security/security.component').then((c) => c.SecurityComponent)
             }
         ]
     },

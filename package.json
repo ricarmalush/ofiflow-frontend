@@ -25,6 +25,7 @@
         "primeclt": "^0.1.5",
         "primeicons": "^7.0.0",
         "primeng": "^21.0.2",
+        "qrcode-generator": "2.0.4",
         "quill": "^2.0.3",
         "rxjs": "~7.8.0",
         "tailwindcss-primeui": "^0.6.1",
