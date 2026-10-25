@@ -1,17 +1,21 @@
-import { Component } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
 import { InputTextModule } from 'primeng/inputtext';
+import { MessageModule } from 'primeng/message';
 import { PasswordModule } from 'primeng/password';
-import { RippleModule } from 'primeng/ripple';
+import { AuthService } from '../../core/services/auth';
+import { safeReturnUrl } from '../../core/utils/return-url.util';
 import { AppFloatingConfigurator } from '../../layout/component/app.floatingconfigurator';
 
+// Login en dos pasos (spec 010 de la API). Paso 1: email y contraseña. Si la cuenta tiene
+// segundo factor, la API no da sesión sino un desafío, y el paso 2 lo canjea con el código de
+// la app de autenticación o con un código de recuperación.
 @Component({
     selector: 'app-login',
     standalone: true,
-    imports: [ButtonModule, CheckboxModule, InputTextModule, PasswordModule, FormsModule, RouterModule, RippleModule, AppFloatingConfigurator],
+    imports: [ButtonModule, InputTextModule, PasswordModule, MessageModule, FormsModule, AppFloatingConfigurator],
     template: `
         <app-floating-configurator />
         <div class="bg-surface-50 dark:bg-surface-950 flex items-center justify-center min-h-screen min-w-screen overflow-hidden">
@@ -36,26 +40,57 @@ import { AppFloatingConfigurator } from '../../layout/component/app.floatingconf
                                     />
                                 </g>
                             </svg>
-                            <div class="text-surface-900 dark:text-surface-0 text-3xl font-medium mb-4">Welcome to PrimeLand!</div>
-                            <span class="text-muted-color font-medium">Sign in to continue</span>
+                            <div class="text-surface-900 dark:text-surface-0 text-3xl font-medium mb-4">Bienvenido a OfiFlow</div>
+                            <span class="text-muted-color font-medium">
+                                {{ step() === 'credentials' ? 'Inicia sesión para continuar' : 'Introduce el código de tu app de autenticación' }}
+                            </span>
                         </div>
 
-                        <div>
-                            <label for="email1" class="block text-surface-900 dark:text-surface-0 text-xl font-medium mb-2">Email</label>
-                            <input pInputText id="email1" type="text" placeholder="Email address" class="w-full md:w-120 mb-8" [(ngModel)]="email" />
+                        @if (error()) {
+                            <p-message severity="error" styleClass="mb-6 w-full md:w-120">{{ error() }}</p-message>
+                        }
 
-                            <label for="password1" class="block text-surface-900 dark:text-surface-0 font-medium text-xl mb-2">Password</label>
-                            <p-password id="password1" [(ngModel)]="password" placeholder="Password" [toggleMask]="true" styleClass="mb-4" [fluid]="true" [feedback]="false"></p-password>
+                        @if (step() === 'credentials') {
+                            <form (ngSubmit)="submitCredentials()">
+                                <label for="email" class="block text-surface-900 dark:text-surface-0 text-xl font-medium mb-2">Email</label>
+                                <input pInputText id="email" name="email" type="email" autocomplete="username" placeholder="tu@empresa.com" class="w-full md:w-120 mb-8" [(ngModel)]="email" required />
 
-                            <div class="flex items-center justify-between mt-2 mb-8 gap-8">
-                                <div class="flex items-center">
-                                    <p-checkbox [(ngModel)]="checked" id="rememberme1" binary class="mr-2"></p-checkbox>
-                                    <label for="rememberme1">Remember me</label>
-                                </div>
-                                <span class="font-medium no-underline ml-2 text-right cursor-pointer text-primary">Forgot password?</span>
-                            </div>
-                            <p-button label="Sign In" styleClass="w-full" routerLink="/"></p-button>
-                        </div>
+                                <label for="password" class="block text-surface-900 dark:text-surface-0 font-medium text-xl mb-2">Contraseña</label>
+                                <p-password
+                                    inputId="password"
+                                    name="password"
+                                    autocomplete="current-password"
+                                    [(ngModel)]="password"
+                                    placeholder="Contraseña"
+                                    [toggleMask]="true"
+                                    styleClass="mb-8"
+                                    [fluid]="true"
+                                    [feedback]="false"
+                                    [required]="true"
+                                ></p-password>
+
+                                <p-button type="submit" label="Entrar" styleClass="w-full" [loading]="loading()" [disabled]="!email || !password"></p-button>
+                            </form>
+                        } @else {
+                            <form (ngSubmit)="submitCode()">
+                                <label for="code" class="block text-surface-900 dark:text-surface-0 text-xl font-medium mb-2">Código</label>
+                                <input
+                                    pInputText
+                                    id="code"
+                                    name="code"
+                                    autocomplete="one-time-code"
+                                    maxlength="64"
+                                    placeholder="123456"
+                                    class="w-full md:w-120 mb-2"
+                                    [(ngModel)]="code"
+                                    required
+                                />
+                                <small class="block text-muted-color mb-8">¿Sin acceso a la app? Usa uno de tus códigos de recuperación.</small>
+
+                                <p-button type="submit" label="Verificar" styleClass="w-full mb-4" [loading]="loading()" [disabled]="!code"></p-button>
+                                <p-button type="button" label="Volver" styleClass="w-full" [text]="true" (onClick)="restart()"></p-button>
+                            </form>
+                        }
                     </div>
                 </div>
             </div>
@@ -63,9 +98,77 @@ import { AppFloatingConfigurator } from '../../layout/component/app.floatingconf
     `
 })
 export class Login {
-    email: string = '';
+    private authService = inject(AuthService);
+    private router = inject(Router);
+    private route = inject(ActivatedRoute);
 
-    password: string = '';
+    email = '';
+    password = '';
+    code = '';
 
-    checked: boolean = false;
+    readonly step = signal<'credentials' | 'mfa'>('credentials');
+    readonly loading = signal(false);
+    readonly error = signal<string | null>(null);
+
+    // El desafío vive solo en memoria: es de un solo uso y caduca en minutos, no se guarda.
+    private challenge: string | null = null;
+
+    submitCredentials(): void {
+        if (this.loading() || !this.email || !this.password) {
+            return;
+        }
+        this.start();
+
+        this.authService.login(this.email.trim(), this.password).subscribe((outcome) => {
+            this.loading.set(false);
+            switch (outcome.kind) {
+                case 'authenticated':
+                    this.enter();
+                    break;
+                case 'mfa-required':
+                    this.challenge = outcome.challenge;
+                    // La contraseña ya cumplió su función: no se queda en memoria durante el paso 2.
+                    this.password = '';
+                    this.step.set('mfa');
+                    break;
+                case 'failed':
+                    this.error.set(outcome.message);
+                    break;
+            }
+        });
+    }
+
+    submitCode(): void {
+        if (this.loading() || !this.code || !this.challenge) {
+            return;
+        }
+        this.start();
+
+        this.authService.verifyMfa(this.challenge, this.code.trim()).subscribe((result) => {
+            this.loading.set(false);
+            if (result.isSuccess) {
+                this.enter();
+            } else {
+                this.code = '';
+                this.error.set(result.message);
+            }
+        });
+    }
+
+    // Desafío caducado o agotado: hay que volver a poner la contraseña para obtener otro.
+    restart(): void {
+        this.challenge = null;
+        this.code = '';
+        this.error.set(null);
+        this.step.set('credentials');
+    }
+
+    private start(): void {
+        this.loading.set(true);
+        this.error.set(null);
+    }
+
+    private enter(): void {
+        this.router.navigateByUrl(safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl')));
+    }
 }
