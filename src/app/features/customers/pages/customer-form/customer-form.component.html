@@ -1,0 +1,64 @@
+<div class="card">
+    <div class="font-semibold text-xl mb-6">{{ customerId() ? 'Editar cliente' : 'Nuevo cliente' }}</div>
+
+    @if (errorMessage()) {
+        <p-message severity="error" styleClass="mb-6">{{ errorMessage() }}</p-message>
+    }
+
+    <form [formGroup]="form" (ngSubmit)="save()" class="flex flex-col gap-6 max-w-2xl">
+        <div class="flex flex-col gap-2">
+            <label for="type" class="font-medium">Tipo</label>
+            <p-selectbutton inputId="type" formControlName="type" [options]="typeOptions" optionLabel="label" optionValue="value" [allowEmpty]="false" />
+            @if (customerId()) {
+                <small class="text-muted-color">El tipo no se puede cambiar después de crear el cliente.</small>
+            }
+        </div>
+
+        <div class="flex flex-col gap-2">
+            <label for="name" class="font-medium">Nombre *</label>
+            <input pInputText id="name" formControlName="name" [maxlength]="limits.nameMaxLength" [invalid]="hasError('name')" />
+            @if (hasError('name')) {
+                <small class="text-red-500">{{ errorText('name') }}</small>
+            }
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="flex flex-col gap-2">
+                <label for="email" class="font-medium">Email</label>
+                <input pInputText id="email" type="email" formControlName="email" autocomplete="off" [invalid]="hasError('email')" />
+                @if (hasError('email')) {
+                    <small class="text-red-500">{{ errorText('email') }}</small>
+                }
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <label for="phone" class="font-medium">Teléfono</label>
+                <input pInputText id="phone" type="tel" formControlName="phone" autocomplete="off" [invalid]="hasError('phone')" />
+                @if (hasError('phone')) {
+                    <small class="text-red-500">{{ errorText('phone') }}</small>
+                }
+            </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+            <label for="address" class="font-medium">Dirección</label>
+            <input pInputText id="address" formControlName="address" [maxlength]="limits.addressMaxLength" [invalid]="hasError('address')" />
+            @if (hasError('address')) {
+                <small class="text-red-500">{{ errorText('address') }}</small>
+            }
+        </div>
+
+        <div class="flex flex-col gap-2">
+            <label for="notes" class="font-medium">Notas</label>
+            <textarea pTextarea id="notes" formControlName="notes" rows="4" [maxlength]="limits.notesMaxLength" [invalid]="hasError('notes')"></textarea>
+            @if (hasError('notes')) {
+                <small class="text-red-500">{{ errorText('notes') }}</small>
+            }
+        </div>
+
+        <div class="flex gap-2">
+            <p-button type="submit" label="Guardar" icon="pi pi-check" [loading]="saving()" [disabled]="loading() || form.disabled" />
+            <p-button type="button" label="Cancelar" severity="secondary" [text]="true" routerLink="/customers" />
+        </div>
+    </form>
+</div>

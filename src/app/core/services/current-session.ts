@@ -1,6 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { jwtDecode } from 'jwt-decode';
 import { TenantRole } from '../../shared/models/auth.model';
+import { Permission, ROLE_PERMISSIONS } from '../../shared/models/permission.model';
 
 // Nombres de claim tal como los escribe TokenService en la API ("sub", "tenant_id", "role"):
 // la API desactiva el renombrado de JwtBearer, así que no llegan como URIs de ClaimTypes.
@@ -33,6 +34,15 @@ export class CurrentSessionService {
     readonly session = computed(() => this.decode(this.token()));
     readonly role = computed(() => this.session()?.role ?? null);
     readonly tenantId = computed(() => this.session()?.tenantId ?? null);
+    readonly permissions = computed(() => {
+        const role = this.role();
+        return new Set<Permission>(role ? (ROLE_PERMISSIONS[role] ?? []) : []);
+    });
+
+    // Para la interfaz (mostrar u ocultar). Un rol desconocido no tiene ningún permiso.
+    can(permission: Permission): boolean {
+        return this.permissions().has(permission);
+    }
 
     establish(accessToken: string | null): void {
         this.token.set(accessToken);

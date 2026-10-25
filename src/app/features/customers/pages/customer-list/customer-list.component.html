@@ -1,0 +1,77 @@
+<div class="card">
+    <p-toolbar styleClass="mb-6">
+        <ng-template #start>
+            <div class="font-semibold text-xl">Clientes</div>
+        </ng-template>
+        <ng-template #end>
+            @if (canWrite) {
+                <p-button label="Nuevo cliente" icon="pi pi-plus" routerLink="/customers/new" />
+            }
+        </ng-template>
+    </p-toolbar>
+
+    @if (errorMessage()) {
+        <p-message severity="error" styleClass="mb-4">{{ errorMessage() }}</p-message>
+    }
+
+    <p-table
+        #table
+        [value]="customers()"
+        [loading]="loading()"
+        [rows]="10"
+        [paginator]="true"
+        [rowHover]="true"
+        [stripedRows]="true"
+        [globalFilterFields]="['name', 'email', 'phone', 'address']"
+        sortField="name"
+        dataKey="id"
+        currentPageReportTemplate="{first}-{last} de {totalRecords}"
+        [showCurrentPageReport]="true"
+    >
+        <ng-template #caption>
+            <p-iconfield>
+                <p-inputicon styleClass="pi pi-search" />
+                <input pInputText type="text" placeholder="Buscar por nombre, email, teléfono o dirección" class="w-full md:w-96" (input)="onSearch(table, $event)" />
+            </p-iconfield>
+        </ng-template>
+
+        <ng-template #header>
+            <tr>
+                <th pSortableColumn="name">Nombre <p-sortIcon field="name" /></th>
+                <th pSortableColumn="type">Tipo <p-sortIcon field="type" /></th>
+                <th>Email</th>
+                <th>Teléfono</th>
+                @if (canWrite || canDelete) {
+                    <th class="w-32"></th>
+                }
+            </tr>
+        </ng-template>
+
+        <ng-template #body let-customer>
+            <tr>
+                <td>{{ customer.name }}</td>
+                <td>
+                    <p-tag [value]="typeLabel(customer)" [severity]="customer.type === 'Company' ? 'info' : 'secondary'" />
+                </td>
+                <td>{{ customer.email ?? '—' }}</td>
+                <td>{{ customer.phone ?? '—' }}</td>
+                @if (canWrite || canDelete) {
+                    <td class="text-right whitespace-nowrap">
+                        @if (canWrite) {
+                            <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" ariaLabel="Editar" [routerLink]="['/customers', customer.id]" />
+                        }
+                        @if (canDelete) {
+                            <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [text]="true" ariaLabel="Eliminar" (onClick)="confirmDelete(customer)" />
+                        }
+                    </td>
+                }
+            </tr>
+        </ng-template>
+
+        <ng-template #emptymessage>
+            <tr>
+                <td colspan="5" class="text-center text-muted-color py-8">No hay clientes.</td>
+            </tr>
+        </ng-template>
+    </p-table>
+</div>

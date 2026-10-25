@@ -4,12 +4,14 @@ import { RouterModule } from '@angular/router';
 import { AppTopbar } from './app.topbar';
 import { AppSidebar } from './app.sidebar';
 import { AppFooter } from './app.footer';
+import { ToastModule } from 'primeng/toast';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { LayoutService } from '@/app/layout/service/layout.service';
 
 @Component({
     selector: 'app-layout',
     standalone: true,
-    imports: [CommonModule, AppTopbar, AppSidebar, RouterModule, AppFooter],
+    imports: [CommonModule, AppTopbar, AppSidebar, RouterModule, AppFooter, ToastModule, ConfirmDialogModule],
     template: `<div class="layout-wrapper" [ngClass]="containerClass()">
         <app-topbar></app-topbar>
         <app-sidebar></app-sidebar>
@@ -18,6 +20,8 @@ import { LayoutService } from '@/app/layout/service/layout.service';
                 <router-outlet></router-outlet>
             </div>
             <app-footer></app-footer>
+            <p-toast />
+            <p-confirmdialog />
         </div>
         <div class="layout-mask"></div>
     </div> `

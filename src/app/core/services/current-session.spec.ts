@@ -43,6 +43,26 @@ describe('CurrentSessionService', () => {
         expect(service.session()).toBeNull();
     });
 
+    it('grants what the role table says: a Manager writes customers but cannot delete them', () => {
+        service.establish(buildSessionToken({ role: 'Manager' }));
+
+        expect(service.can('Customers.Write')).toBeTrue();
+        expect(service.can('Customers.Delete')).toBeFalse();
+    });
+
+    it('a Technician only reads customers', () => {
+        service.establish(buildSessionToken({ role: 'Technician' }));
+
+        expect(service.can('Customers.Read')).toBeTrue();
+        expect(service.can('Customers.Write')).toBeFalse();
+    });
+
+    it('an unknown role gets no permission at all', () => {
+        service.establish(buildSessionToken({ role: 'SuperUser' }));
+
+        expect(service.can('Customers.Read')).toBeFalse();
+    });
+
     it('forgets everything on clear()', () => {
         service.establish(buildSessionToken());
         service.clear();
