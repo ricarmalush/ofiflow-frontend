@@ -1,0 +1,136 @@
+<div class="card">
+    <p-toolbar styleClass="mb-6">
+        <ng-template #start>
+            <div class="font-semibold text-xl">Equipo</div>
+        </ng-template>
+        <ng-template #end>
+            @if (canManageUsers && grantableRoles.length) {
+                <p-button label="Invitar" icon="pi pi-user-plus" (onClick)="openInvite()" />
+            }
+        </ng-template>
+    </p-toolbar>
+
+    @if (errorMessage()) {
+        <p-message severity="error" styleClass="mb-4">{{ errorMessage() }}</p-message>
+    }
+
+    <p-table [value]="members()" [loading]="loading()" [rowHover]="true" [stripedRows]="true" dataKey="id" sortField="name">
+        <ng-template #header>
+            <tr>
+                <th pSortableColumn="name">Nombre <p-sortIcon field="name" /></th>
+                <th>Email</th>
+                <th pSortableColumn="role">Rol <p-sortIcon field="role" /></th>
+                <th pSortableColumn="joinedAt">Desde <p-sortIcon field="joinedAt" /></th>
+                @if (canManageUsers) {
+                    <th class="w-32"></th>
+                }
+            </tr>
+        </ng-template>
+
+        <ng-template #body let-member>
+            <tr>
+                <td>
+                    {{ member.name }}
+                    @if (member.isCurrentUser) {
+                        <p-tag value="Tú" severity="info" styleClass="ml-2" />
+                    }
+                </td>
+                <td>{{ member.email }}</td>
+                <td>
+                    @if (canActOn(member)) {
+                        <p-select
+                            [options]="grantableRoles"
+                            optionLabel="label"
+                            optionValue="value"
+                            [ngModel]="member.role"
+                            (ngModelChange)="changeRole(member, $event)"
+                            [disabled]="busyId() === member.id"
+                            [ariaLabel]="'Rol de ' + member.name"
+                            styleClass="w-44"
+                        />
+                    } @else {
+                        <p-tag [value]="roleLabel(member.role)" [severity]="member.role === 'Owner' ? 'contrast' : 'secondary'" />
+                    }
+                </td>
+                <td>{{ member.joinedAt | date: 'dd/MM/yyyy' }}</td>
+                @if (canManageUsers) {
+                    <td class="text-right whitespace-nowrap">
+                        @if (canActOn(member)) {
+                            <p-button icon="pi pi-key" severity="warn" [rounded]="true" [text]="true" ariaLabel="Reiniciar segundo factor" [disabled]="busyId() === member.id" (onClick)="confirmResetMfa(member)" />
+                            <p-button icon="pi pi-user-minus" severity="danger" [rounded]="true" [text]="true" ariaLabel="Quitar del equipo" [disabled]="busyId() === member.id" (onClick)="confirmRemove(member)" />
+                        }
+                    </td>
+                }
+            </tr>
+        </ng-template>
+    </p-table>
+</div>
+
+@if (canManageUsers) {
+    <div class="card">
+        <div class="font-semibold text-xl mb-4">Invitaciones pendientes</div>
+        <p-table [value]="invitations()" dataKey="id">
+            <ng-template #header>
+                <tr>
+                    <th>Email</th>
+                    <th>Rol</th>
+                    <th>Caduca</th>
+                    <th class="w-20"></th>
+                </tr>
+            </ng-template>
+            <ng-template #body let-invitation>
+                <tr>
+                    <td>{{ invitation.email }}</td>
+                    <td><p-tag [value]="roleLabel(invitation.role)" severity="secondary" /></td>
+                    <td>{{ invitation.expiresAt | date: 'dd/MM/yyyy HH:mm' }}</td>
+                    <td class="text-right">
+                        <p-button icon="pi pi-ban" severity="danger" [rounded]="true" [text]="true" ariaLabel="Revocar invitación" (onClick)="confirmRevoke(invitation)" />
+                    </td>
+                </tr>
+            </ng-template>
+            <ng-template #emptymessage>
+                <tr>
+                    <td colspan="4" class="text-center text-muted-color py-6">No hay invitaciones pendientes.</td>
+                </tr>
+            </ng-template>
+        </p-table>
+    </div>
+}
+
+<p-dialog [(visible)]="inviteOpen" (onHide)="closeInvite()" header="Invitar al equipo" [modal]="true" [style]="{ width: '34rem' }" [breakpoints]="{ '640px': '95vw' }">
+    @if (!inviteLink()) {
+        <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()" class="flex flex-col gap-5">
+            @if (inviteError()) {
+                <p-message severity="error">{{ inviteError() }}</p-message>
+            }
+            <div class="flex flex-col gap-2">
+                <label for="inviteEmail" class="font-medium">Email</label>
+                <input pInputText id="inviteEmail" type="email" formControlName="email" autocomplete="off" [invalid]="inviteForm.controls.email.invalid && inviteForm.controls.email.touched" />
+                @if (inviteForm.controls.email.invalid && inviteForm.controls.email.touched) {
+                    <small class="text-red-500">Escribe un email válido.</small>
+                }
+            </div>
+            <div class="flex flex-col gap-2">
+                <label for="inviteRole" class="font-medium">Rol</label>
+                <p-select inputId="inviteRole" formControlName="role" [options]="grantableRoles" optionLabel="label" optionValue="value" styleClass="w-full" appendTo="body" />
+            </div>
+            <div class="flex justify-end gap-2">
+                <p-button type="button" label="Cancelar" severity="secondary" [text]="true" (onClick)="closeInvite()" />
+                <p-button type="submit" label="Crear invitación" icon="pi pi-send" [loading]="inviting()" />
+            </div>
+        </form>
+    } @else {
+        <div class="flex flex-col gap-4">
+            <p-message severity="warn">
+                Este enlace solo se muestra ahora. Cópialo y envíaselo a la persona por un canal de confianza. Quien lo tenga puede crear la cuenta, así que no lo publiques.
+            </p-message>
+            <p-inputgroup>
+                <input pInputText readonly [value]="inviteLink()" aria-label="Enlace de invitación" class="w-full" (focus)="$any($event.target).select()" />
+                <p-button icon="pi pi-copy" ariaLabel="Copiar enlace" (onClick)="copyInviteLink()" />
+            </p-inputgroup>
+            <div class="flex justify-end">
+                <p-button label="Hecho" (onClick)="closeInvite()" />
+            </div>
+        </div>
+    }
+</p-dialog>

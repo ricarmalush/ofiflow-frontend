@@ -5,7 +5,7 @@ import { Observable, catchError, finalize, map, of, shareReplay, tap } from 'rxj
 import { environment } from '../../../environments/environment';
 import { AuthTokens, LoginOutcome, MfaChallenge } from '../../shared/models/auth.model';
 import { OperationResult } from '../../shared/models/result.model';
-import { extractErrorMessage } from '../utils/http-result.util';
+import { extractErrorMessage, toOperationResult } from '../utils/http-result.util';
 import { CurrentSessionService } from './current-session';
 
 const ACCESS_TOKEN_KEY = 'ofiflow_access_token';
@@ -61,6 +61,13 @@ export class AuthService {
             map(() => ({ isSuccess: true, message: '' })),
             catchError((error: HttpErrorResponse) => of<OperationResult>({ isSuccess: false, message: error.status === 401 ? INVALID_MFA_CODE_MESSAGE : extractErrorMessage(error) }))
         );
+    }
+
+    // La persona invitada elige su nombre y su contraseña; la API no devuelve sesión, así que
+    // después entra por el login normal. Un token caducado, revocado, usado o inventado dan el
+    // mismo error (invitation.invalid): la API no dice cuál de los cuatro fue.
+    acceptInvitation(token: string, name: string, password: string): Observable<OperationResult> {
+        return toOperationResult(this.http.post<void>(`${this.authUrl}/accept-invitation`, { token, name, password }));
     }
 
     // Cambia el refresh token por un par nuevo. true si hay sesión nueva; false si no había

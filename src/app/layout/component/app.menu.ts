@@ -38,6 +38,10 @@ export class AppMenu {
                     ...(can('Customers.Read') ? [{ label: 'Clientes', icon: 'pi pi-fw pi-users', routerLink: ['/customers'] }] : []),
                     ...(can('Jobs.Read') ? [{ label: 'Trabajos', icon: 'pi pi-fw pi-briefcase', routerLink: ['/jobs'] }] : [])
                 ]
+            },
+            {
+                label: 'Administración',
+                items: [...(can('Users.Read') ? [{ label: 'Equipo', icon: 'pi pi-fw pi-id-card', routerLink: ['/team'] }] : [])]
             }
         ];
         return sections.filter((section) => section.items?.length);

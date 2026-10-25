@@ -46,6 +46,10 @@ import { AppFloatingConfigurator } from '../../layout/component/app.floatingconf
                             </span>
                         </div>
 
+                        @if (info() && !error()) {
+                            <p-message severity="success" styleClass="mb-6 w-full md:w-120">{{ info() }}</p-message>
+                        }
+
                         @if (error()) {
                             <p-message severity="error" styleClass="mb-6 w-full md:w-120">{{ error() }}</p-message>
                         }
@@ -109,6 +113,8 @@ export class Login {
     readonly step = signal<'credentials' | 'mfa'>('credentials');
     readonly loading = signal(false);
     readonly error = signal<string | null>(null);
+    // Llega desde la página de aceptar invitación (estado de la navegación, no la URL).
+    readonly info = signal<string | null>(history.state?.invitationAccepted ? 'Cuenta creada. Ya puedes entrar con tu email y tu contraseña.' : null);
 
     // El desafío vive solo en memoria: es de un solo uso y caduca en minutos, no se guarda.
     private challenge: string | null = null;
