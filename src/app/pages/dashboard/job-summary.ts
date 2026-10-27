@@ -18,6 +18,9 @@ export interface JobSummary {
     inProgress: number;
     // Abiertos que nadie tiene asignados: lo que un gestor tiene que repartir.
     unassigned: number;
+    // Abiertos asignados a MI pertenencia (el Id que da GET /account/me). 0 si no se sabe cuál es la mía: sin ese Id
+    // no se puede decir que un trabajo sea «mío», y es mejor no contar que contar mal.
+    assignedToMe: number;
     // Abiertos con prioridad Alta o Urgente.
     highPriority: number;
     byStatus: Readonly<Record<JobStatus, number>>;
@@ -29,7 +32,7 @@ export const isOpen = (job: Job): boolean => OPEN_STATUSES.includes(job.status);
 
 const isHighPriority = (job: Job): boolean => job.priority === 'High' || job.priority === 'Urgent';
 
-export function summarizeJobs(jobs: readonly Job[]): JobSummary {
+export function summarizeJobs(jobs: readonly Job[], myMembershipId: string | null = null): JobSummary {
     const byStatus: Record<JobStatus, number> = { New: 0, Pending: 0, Scheduled: 0, InProgress: 0, Completed: 0, Cancelled: 0 };
     for (const job of jobs) {
         // Un estado que el frontend no conoce (la API añadió uno) no rompe el resumen: cuenta en el total, no en el reparto.
@@ -45,6 +48,7 @@ export function summarizeJobs(jobs: readonly Job[]): JobSummary {
         open: open.length,
         inProgress: byStatus.InProgress,
         unassigned: open.filter((job) => !job.assignedTenantUserId).length,
+        assignedToMe: myMembershipId ? open.filter((job) => job.assignedTenantUserId === myMembershipId).length : 0,
         highPriority: open.filter(isHighPriority).length,
         byStatus,
         attention: open

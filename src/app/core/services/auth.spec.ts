@@ -5,6 +5,7 @@ import { Router, provideRouter } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { LoginOutcome } from '../../shared/models/auth.model';
 import { OperationResult } from '../../shared/models/result.model';
+import { buildAccount } from '../testing/fake-account';
 import { buildSessionToken } from '../testing/fake-jwt';
 import { AuthService, INVALID_CREDENTIALS_MESSAGE, INVALID_MFA_CODE_MESSAGE } from './auth';
 import { CurrentSessionService } from './current-session';
@@ -13,6 +14,7 @@ describe('AuthService', () => {
     let service: AuthService;
     let httpMock: HttpTestingController;
     const authUrl = `${environment.apiUrl}/auth`;
+    const accountUrl = `${environment.apiUrl}/account/me`;
     const tokens = { accessToken: buildSessionToken(), refreshToken: 'refresh-1', expiresAt: '2030-01-01T00:00:00Z' };
 
     beforeEach(() => {
@@ -38,7 +40,7 @@ describe('AuthService', () => {
 
             expect(outcome).toEqual({ kind: 'authenticated' });
             expect(service.getToken()).toBe(tokens.accessToken);
-            expect(TestBed.inject(CurrentSessionService).role()).toBe('Owner');
+            expect(TestBed.inject(CurrentSessionService).session()?.tokenRole).toBe('Owner');
         });
 
         it('returns the challenge and stores nothing when a second factor is required', () => {
@@ -104,6 +106,7 @@ describe('AuthService', () => {
             const req = httpMock.expectOne(`${authUrl}/refresh`);
             expect(req.request.body).toEqual({ refreshToken: 'refresh-1' });
             req.flush({ ...tokens, refreshToken: 'refresh-2' });
+            httpMock.expectOne(accountUrl).flush(buildAccount()); // renovar la sesión también vuelve a preguntar quién soy
 
             expect(refreshed).toBeTrue();
             expect(service.getRefreshToken()).toBe('refresh-2');
@@ -115,8 +118,29 @@ describe('AuthService', () => {
             service.refresh().subscribe((r) => results.push(r));
 
             httpMock.expectOne(`${authUrl}/refresh`).flush({ ...tokens, refreshToken: 'refresh-2' });
+            httpMock.expectOne(accountUrl).flush(buildAccount());
 
             expect(results).toEqual([true, true]);
+        });
+
+        it('asks again who I am when the session is renewed: if a manager changed my role meanwhile, the new one is picked up', () => {
+            const session = TestBed.inject(CurrentSessionService);
+            session.setAccount(buildAccount({ role: 'Technician' }));
+            service.refresh().subscribe();
+
+            httpMock.expectOne(`${authUrl}/refresh`).flush({ ...tokens, refreshToken: 'refresh-2' });
+            httpMock.expectOne(accountUrl).flush(buildAccount({ role: 'Manager' }));
+
+            expect(session.role()).toBe('Manager');
+            expect(session.can('Jobs.Assign')).toBeTrue();
+        });
+
+        it('does not ask for the account when the refresh is rejected', () => {
+            service.refresh().subscribe();
+
+            httpMock.expectOne(`${authUrl}/refresh`).flush(null, { status: 401, statusText: 'Unauthorized' });
+
+            httpMock.expectNone(accountUrl);
         });
 
         it('clears the session when the API rejects the refresh token', () => {

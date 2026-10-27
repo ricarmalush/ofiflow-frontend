@@ -5,6 +5,8 @@ import { provideRouter } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
 import { AuthService } from '../services/auth';
+import { CurrentSessionService } from '../services/current-session';
+import { buildAccount } from '../testing/fake-account';
 import { buildSessionToken } from '../testing/fake-jwt';
 import { authInterceptor } from './auth.interceptor';
 
@@ -14,6 +16,7 @@ describe('authInterceptor', () => {
     let authService: AuthService;
     const jobsUrl = `${environment.apiUrl}/jobs`;
     const refreshUrl = `${environment.apiUrl}/auth/refresh`;
+    const accountUrl = `${environment.apiUrl}/account/me`;
     const token = buildSessionToken();
     const newToken = buildSessionToken({ role: 'Admin' });
 
@@ -55,6 +58,7 @@ describe('authInterceptor', () => {
 
         httpMock.expectOne(jobsUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
         httpMock.expectOne(refreshUrl).flush({ accessToken: newToken, refreshToken: 'refresh-2', expiresAt: '' });
+        httpMock.expectOne(accountUrl).flush(buildAccount()); // renovar la sesión también vuelve a preguntar quién soy
         const retry = httpMock.expectOne(jobsUrl);
         expect(retry.request.headers.get('Authorization')).toBe(`Bearer ${newToken}`);
         retry.flush([{ id: 1 }]);
@@ -112,6 +116,7 @@ describe('authInterceptor', () => {
 
             http.get(jobsUrl).subscribe({ error: () => undefined });
             httpMock.expectOne(jobsUrl).flush({ code: 'auth.forbidden', detail: 'No tienes permiso.' }, suspended);
+            httpMock.expectOne(accountUrl).flush(buildAccount()); // sí vuelve a pedir la cuenta (ver abajo)
 
             expect(authService.logout).not.toHaveBeenCalled();
         });
@@ -123,6 +128,52 @@ describe('authInterceptor', () => {
             httpMock.expectOne(jobsUrl).flush('<html>Forbidden</html>', suspended);
 
             expect(authService.logout).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('when the API says "your role cannot do this" (auth.forbidden)', () => {
+        const forbidden = { status: 403, statusText: 'Forbidden' };
+
+        it('asks again who I am: the interface was offering something the role no longer allows, so its idea of my role is stale', () => {
+            const session = TestBed.inject(CurrentSessionService);
+            session.setAccount(buildAccount({ role: 'Manager' })); // lo que la interfaz cree
+            let failed: unknown;
+
+            http.get(jobsUrl).subscribe({ error: (e) => (failed = e) });
+            httpMock.expectOne(jobsUrl).flush({ code: 'auth.forbidden', detail: 'No tienes permiso.' }, forbidden);
+            httpMock.expectOne(accountUrl).flush(buildAccount({ role: 'Technician' })); // lo que la API dice ahora
+
+            expect(session.role()).toBe('Technician');
+            expect(session.can('Jobs.Assign')).toBeFalse();
+            expect(failed).toBeTruthy(); // y el error sigue llegando a quien llamó, para que avise al usuario
+        });
+
+        it('does not loop when the 403 is the one of the account request itself (a removed member)', () => {
+            http.get(accountUrl).subscribe({ error: () => undefined });
+
+            httpMock.expectOne(accountUrl).flush({ code: 'auth.forbidden', detail: 'No tienes permiso.' }, forbidden);
+
+            httpMock.expectNone(accountUrl); // httpMock.verify() también lo comprueba
+        });
+
+        it('does not ask for the account on other errors (a 500 or a validation error say nothing about the role)', () => {
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush({ code: 'server.unexpected' }, { status: 500, statusText: 'Server Error' });
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush({ code: 'validation.failed' }, { status: 400, statusText: 'Bad Request' });
+
+            httpMock.expectNone(accountUrl);
+        });
+
+        it('a suspended company closes the session instead of asking for the account', () => {
+            spyOn(authService, 'logout');
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush({ code: 'tenant.suspended', detail: 'Suspendida.' }, forbidden);
+
+            httpMock.expectNone(accountUrl);
+            expect(authService.logout).toHaveBeenCalled();
         });
     });
 });

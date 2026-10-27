@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { IconFieldModule } from 'primeng/iconfield';
@@ -63,16 +63,24 @@ export class JobListComponent implements OnInit {
 
     readonly statusOptions = (Object.keys(JOB_STATUS_LABELS) as JobStatus[]).map((value) => ({ label: JOB_STATUS_LABELS[value], value }));
 
+    // El Id de MI pertenencia (GET /account/me): con él se sabe qué trabajos son míos aunque no pueda listar el equipo.
+    readonly myMembershipId = this.session.membershipId;
+    // «Solo mis trabajos»: llega marcado desde el dashboard (/jobs?mine=1).
+    readonly onlyMine = signal(inject(ActivatedRoute).snapshot.queryParamMap.get('mine') === '1');
+
     readonly rows = computed<JobRow[]>(() => {
         const customers = this.customerNames();
         const members = this.memberNames();
         const status = this.statusFilter();
+        const me = this.myMembershipId();
+        const onlyMine = this.onlyMine();
         return this.jobs()
             .filter((job) => !status || job.status === status)
+            .filter((job) => !onlyMine || (!!me && job.assignedTenantUserId === me))
             .map((job) => ({
                 ...job,
                 customerName: customers.get(job.customerId) ?? '—',
-                assigneeName: !job.assignedTenantUserId ? 'Sin asignar' : (members.get(job.assignedTenantUserId) ?? 'Asignado')
+                assigneeName: !job.assignedTenantUserId ? 'Sin asignar' : me && job.assignedTenantUserId === me ? 'Tú' : (members.get(job.assignedTenantUserId) ?? 'Asignado')
             }));
     });
 

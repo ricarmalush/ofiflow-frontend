@@ -19,6 +19,7 @@ interface Tile {
     iconBox: string;
     iconColor: string;
     link: string;
+    queryParams?: Record<string, string>;
 }
 
 // Un vistazo a la empresa con lo que ya devuelven los listados: la API no tiene un endpoint de
@@ -39,6 +40,7 @@ export class Dashboard implements OnInit {
     readonly canSeeCustomers = this.session.can('Customers.Read');
     readonly canSeeJobs = this.session.can('Jobs.Read');
     private readonly canAssign = this.session.can('Jobs.Assign');
+    private readonly canExecute = this.session.can('Jobs.Execute');
     readonly canEditJobs = this.session.can('Jobs.Write');
     readonly canCreateCustomers = this.session.can('Customers.Write');
 
@@ -48,7 +50,8 @@ export class Dashboard implements OnInit {
     readonly customersError = signal<string | null>(null);
     readonly jobsError = signal<string | null>(null);
 
-    readonly summary = computed(() => summarizeJobs(this.jobs()));
+    // El Id de MI pertenencia (GET /account/me): con él se cuentan los trabajos asignados a mí.
+    readonly summary = computed(() => summarizeJobs(this.jobs(), this.session.membershipId()));
     private readonly customerNames = computed(() => new Map(this.customers().map((customer) => [customer.id, customer.name])));
 
     readonly tiles = computed<Tile[]>(() => {
@@ -60,6 +63,10 @@ export class Dashboard implements OnInit {
         }
         if (this.canSeeJobs && !this.jobsError()) {
             tiles.push({ label: 'Trabajos abiertos', value: summary.open, icon: 'pi-briefcase', iconBox: 'bg-cyan-100 dark:bg-cyan-400/10', iconColor: 'text-cyan-500', link: '/jobs' });
+            // «Mis trabajos» tiene sentido para quien los ejecuta (un técnico, un responsable): es lo primero que quiere ver.
+            if (this.canExecute && this.session.membershipId()) {
+                tiles.push({ label: 'Asignados a mí', value: summary.assignedToMe, icon: 'pi-user', iconBox: 'bg-teal-100 dark:bg-teal-400/10', iconColor: 'text-teal-500', link: '/jobs', queryParams: { mine: '1' } });
+            }
             tiles.push({ label: 'En curso', value: summary.inProgress, icon: 'pi-play', iconBox: 'bg-green-100 dark:bg-green-400/10', iconColor: 'text-green-500', link: '/jobs' });
             tiles.push({ label: 'Urgentes y altas', value: summary.highPriority, icon: 'pi-exclamation-triangle', iconBox: 'bg-orange-100 dark:bg-orange-400/10', iconColor: 'text-orange-500', link: '/jobs' });
             // Repartir trabajo es cosa de quien puede asignar: para el resto, "sin asignar" no es una acción suya.

@@ -131,3 +131,34 @@ describe('percentOf', () => {
         expect(percentOf(-3, 5)).toBe(0);
     });
 });
+
+describe('summarizeJobs · assigned to me', () => {
+    const me = 'membership-me';
+
+    it('counts only OPEN jobs assigned to my membership', () => {
+        const summary = summarizeJobs(
+            [
+                job('InProgress', 'Normal', { assignedTenantUserId: me }),
+                job('New', 'Normal', { assignedTenantUserId: me }),
+                job('Completed', 'Normal', { assignedTenantUserId: me }), // mío pero ya terminado: historia, no trabajo pendiente
+                job('New', 'Normal', { assignedTenantUserId: 'someone-else' }),
+                job('New') // sin asignar
+            ],
+            me
+        );
+
+        expect(summary.assignedToMe).toBe(2);
+    });
+
+    it('is 0 when my membership is not known (never guesses which jobs are mine)', () => {
+        const jobs = [job('New', 'Normal', { assignedTenantUserId: me }), job('New')];
+
+        expect(summarizeJobs(jobs).assignedToMe).toBe(0);
+        expect(summarizeJobs(jobs, null).assignedToMe).toBe(0);
+        expect(summarizeJobs(jobs, '').assignedToMe).toBe(0);
+    });
+
+    it('does not count unassigned jobs as mine even if the id is empty', () => {
+        expect(summarizeJobs([job('New', 'Normal', { assignedTenantUserId: null })], me).assignedToMe).toBe(0);
+    });
+});

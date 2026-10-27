@@ -3,12 +3,14 @@ import { inject } from '@angular/core';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ProblemDetails } from '../../shared/models/problem-details.model';
-import { TENANT_SUSPENDED_CODE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
+import { FORBIDDEN_CODE, TENANT_SUSPENDED_CODE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
+import { AccountService } from '../services/account';
 import { AuthService } from '../services/auth';
 
 // Rutas anónimas de la API: no llevan token, y su 401 es una respuesta normal del flujo
 // (credenciales o código erróneos) que muestra la pantalla de login, no una sesión caducada.
 const AUTH_ROUTES = `${environment.apiUrl}/auth/`;
+const ACCOUNT_URL = `${environment.apiUrl}/account/me`;
 
 function withToken(req: HttpRequest<unknown>, token: string | null): HttpRequest<unknown> {
     return token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
@@ -20,6 +22,10 @@ function isTenantSuspended(error: HttpErrorResponse): boolean {
     return error.status === 403 && (error.error as ProblemDetails | null)?.code === TENANT_SUSPENDED_CODE;
 }
 
+function isForbidden(error: HttpErrorResponse): boolean {
+    return error.status === 403 && (error.error as ProblemDetails | null)?.code === FORBIDDEN_CODE;
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
     // El token solo viaja a nuestra API. Si se añadiera a cualquier petición, una llamada a un
     // dominio externo (un CDN, un servicio de mapas...) se llevaría la sesión del usuario.
@@ -27,7 +33,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         return next(req);
     }
 
+    // inject() solo funciona aquí, al empezar el interceptor, y no dentro de los callbacks de más abajo.
     const authService = inject(AuthService);
+    const accountService = inject(AccountService);
 
     return next(withToken(req, authService.getToken())).pipe(
         catchError((error: HttpErrorResponse) => {
@@ -36,6 +44,17 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
             // explica, en vez de dejar al usuario ante errores sueltos en cada pantalla.
             if (isTenantSuspended(error)) {
                 authService.logout((error.error as ProblemDetails).detail || TENANT_SUSPENDED_MESSAGE, 'warn');
+                return throwError(() => error);
+            }
+
+            // "Tu rol no puede hacer esto": si la interfaz lo estaba ofreciendo es que su idea de mi rol está desfasada (un
+            // gestor me lo cambió). Se vuelve a pedir la cuenta, sin esperar, para que lo próximo que se pinte sea correcto.
+            // El error sigue su camino: quien hizo la petición avisa al usuario con el texto de la API.
+            // Salvo que el 403 sea el de la propia petición de la cuenta (un miembro quitado): pedirla otra vez sería un bucle.
+            if (isForbidden(error)) {
+                if (req.url !== ACCOUNT_URL) {
+                    accountService.load().subscribe();
+                }
                 return throwError(() => error);
             }
 

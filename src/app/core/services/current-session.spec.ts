@@ -1,6 +1,18 @@
 import { TestBed } from '@angular/core/testing';
+import { CurrentAccount } from '../../shared/models/account.model';
 import { buildSessionToken } from '../testing/fake-jwt';
 import { CurrentSessionService } from './current-session';
+
+const account: CurrentAccount = {
+    userId: '11111111-1111-1111-1111-111111111111',
+    membershipId: '33333333-3333-3333-3333-333333333333',
+    name: 'Ana',
+    email: 'ana@empresa.com',
+    tenantId: '22222222-2222-2222-2222-222222222222',
+    tenantName: 'Empresa',
+    role: 'Manager',
+    permissions: ['Customers.Read', 'Customers.Write', 'Jobs.Assign']
+};
 
 describe('CurrentSessionService', () => {
     let service: CurrentSessionService;
@@ -10,19 +22,27 @@ describe('CurrentSessionService', () => {
         service = TestBed.inject(CurrentSessionService);
     });
 
-    it('has no session before establish() is called', () => {
+    it('has no session and no account before anything is established', () => {
         expect(service.session()).toBeNull();
+        expect(service.account()).toBeNull();
         expect(service.role()).toBeNull();
         expect(service.isExpired()).toBeTrue();
     });
 
-    it('reads the user, tenant and role from the claims the API writes', () => {
+    it('reads the user, tenant and the role the TOKEN said from the claims the API writes', () => {
         service.establish(buildSessionToken({ role: 'Technician' }));
 
         expect(service.session()?.userId).toBe('11111111-1111-1111-1111-111111111111');
         expect(service.tenantId()).toBe('22222222-2222-2222-2222-222222222222');
-        expect(service.role()).toBe('Technician');
+        expect(service.session()?.tokenRole).toBe('Technician');
         expect(service.isExpired()).toBeFalse();
+    });
+
+    it('the token role does NOT decide anything: without an account loaded there is no role and no permission', () => {
+        service.establish(buildSessionToken({ role: 'Owner' }));
+
+        expect(service.role()).toBeNull();
+        expect(service.can('Customers.Read')).toBeFalse();
     });
 
     it('treats a token past its exp as expired', () => {
@@ -43,30 +63,54 @@ describe('CurrentSessionService', () => {
         expect(service.session()).toBeNull();
     });
 
-    it('grants what the role table says: a Manager writes customers but cannot delete them', () => {
-        service.establish(buildSessionToken({ role: 'Manager' }));
+    describe('the account', () => {
+        beforeEach(() => service.establish(buildSessionToken()));
 
-        expect(service.can('Customers.Write')).toBeTrue();
-        expect(service.can('Customers.Delete')).toBeFalse();
-    });
+        it('grants exactly what the API said: a Manager writes customers but cannot delete them', () => {
+            service.setAccount(account);
 
-    it('a Technician only reads customers', () => {
-        service.establish(buildSessionToken({ role: 'Technician' }));
+            expect(service.role()).toBe('Manager');
+            expect(service.can('Customers.Write')).toBeTrue();
+            expect(service.can('Customers.Delete')).toBeFalse();
+        });
 
-        expect(service.can('Customers.Read')).toBeTrue();
-        expect(service.can('Customers.Write')).toBeFalse();
-    });
+        it('exposes the membership id and the company', () => {
+            service.setAccount(account);
 
-    it('an unknown role gets no permission at all', () => {
-        service.establish(buildSessionToken({ role: 'SuperUser' }));
+            expect(service.membershipId()).toBe('33333333-3333-3333-3333-333333333333');
+            expect(service.account()?.tenantName).toBe('Empresa');
+        });
 
-        expect(service.can('Customers.Read')).toBeFalse();
-    });
+        it('keeps the account when the session renews for the SAME person (a refresh gives a new token, not a new person)', () => {
+            service.setAccount(account);
 
-    it('forgets everything on clear()', () => {
-        service.establish(buildSessionToken());
-        service.clear();
+            service.establish(buildSessionToken());
 
-        expect(service.session()).toBeNull();
+            expect(service.account()).not.toBeNull();
+        });
+
+        it('drops the account when ANOTHER person gets the session in the same browser', () => {
+            service.setAccount(account);
+
+            service.establish(buildSessionToken({ sub: '99999999-9999-9999-9999-999999999999' }));
+
+            expect(service.account()).toBeNull();
+            expect(service.can('Customers.Read')).toBeFalse();
+        });
+
+        it('an unknown permission name is simply not granted', () => {
+            service.setAccount({ ...account, permissions: ['Something.New'] });
+
+            expect(service.can('Customers.Read')).toBeFalse();
+        });
+
+        it('forgets the session AND the account on clear()', () => {
+            service.setAccount(account);
+            service.clear();
+
+            expect(service.session()).toBeNull();
+            expect(service.account()).toBeNull();
+            expect(service.membershipId()).toBeNull();
+        });
     });
 });

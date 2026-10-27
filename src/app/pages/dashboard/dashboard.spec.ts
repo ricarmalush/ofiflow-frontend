@@ -4,7 +4,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { CurrentSessionService } from '../../core/services/current-session';
+import { buildAccount } from '../../core/testing/fake-account';
 import { buildSessionToken } from '../../core/testing/fake-jwt';
+import { CurrentAccount } from '../../shared/models/account.model';
+import { TenantRole } from '../../shared/models/auth.model';
 import { Customer } from '../../shared/models/customer.model';
 import { Job, JobPriority, JobStatus } from '../../shared/models/job.model';
 import { Dashboard } from './dashboard';
@@ -30,8 +33,11 @@ describe('Dashboard', () => {
     let fixture: ComponentFixture<Dashboard>;
     let httpMock: HttpTestingController;
 
-    function start(role: string): void {
-        TestBed.inject(CurrentSessionService).establish(buildSessionToken({ role }));
+    function start(role: string, account: Partial<CurrentAccount> = {}): void {
+        const session = TestBed.inject(CurrentSessionService);
+        session.establish(buildSessionToken());
+        // Lo que sabe el dashboard de quién es lo dice la API (GET /account/me), no el token.
+        session.setAccount(buildAccount({ role: role as TenantRole, ...account }));
         fixture = TestBed.createComponent(Dashboard);
         fixture.detectChanges(); // ngOnInit: lanza las peticiones
     }
@@ -57,7 +63,7 @@ describe('Dashboard', () => {
         ]);
         fixture.detectChanges();
 
-        expect(tileLabels()).toEqual(['Clientes: 2', 'Trabajos abiertos: 3', 'En curso: 1', 'Urgentes y altas: 2', 'Sin asignar: 2']);
+        expect(tileLabels()).toEqual(['Clientes: 2', 'Trabajos abiertos: 3', 'Asignados a mí: 0', 'En curso: 1', 'Urgentes y altas: 2', 'Sin asignar: 2']);
 
         // Requieren atención: los abiertos Urgentes o Altos (el completado no), con el nombre del cliente.
         expect(text()).toContain('Avería en cocina');
@@ -91,6 +97,39 @@ describe('Dashboard', () => {
         expect(tileLabels().some((label) => label?.startsWith('Sin asignar'))).toBeFalse();
         expect((fixture.nativeElement as HTMLElement).querySelector('li a')).toBeNull();
         expect(text()).toContain('Avería');
+    });
+
+    it('counts the open jobs assigned to ME (by the membership id of /account/me) and links to the list filtered by mine', () => {
+        start('Technician', { membershipId: 'm-me' });
+        httpMock.expectOne(customersUrl).flush([customer('c1', 'Marta')]);
+        httpMock.expectOne(jobsUrl).flush([
+            job('j1', 'Mío abierto', 'Scheduled', 'Normal', { assignedTenantUserId: 'm-me' }),
+            job('j2', 'Mío terminado', 'Completed', 'Normal', { assignedTenantUserId: 'm-me' }),
+            job('j3', 'De otro', 'New', 'Normal', { assignedTenantUserId: 'm-other' })
+        ]);
+        fixture.detectChanges();
+
+        expect(tileLabels()).toContain('Asignados a mí: 1');
+        const tile = (fixture.nativeElement as HTMLElement).querySelector('a.card[aria-label^="Asignados a mí"]');
+        expect(tile?.getAttribute('href')).toBe('/jobs?mine=1');
+    });
+
+    it('has no "assigned to me" tile for roles that cannot execute jobs', () => {
+        start('Employee');
+        httpMock.expectOne(customersUrl).flush([customer('c1', 'Marta')]);
+        httpMock.expectOne(jobsUrl).flush([job('j1', 'Avería', 'New', 'Normal', { assignedTenantUserId: '33333333-3333-3333-3333-333333333333' })]);
+        fixture.detectChanges();
+
+        expect(tileLabels().some((label) => label?.startsWith('Asignados a mí'))).toBeFalse();
+    });
+
+    it('has no "assigned to me" tile when /account/me gave no membership id', () => {
+        start('Technician', { membershipId: '' });
+        httpMock.expectOne(customersUrl).flush([customer('c1', 'Marta')]);
+        httpMock.expectOne(jobsUrl).flush([job('j1', 'Avería', 'New', 'Normal')]);
+        fixture.detectChanges();
+
+        expect(tileLabels().some((label) => label?.startsWith('Asignados a mí'))).toBeFalse();
     });
 
     it('asks only for what the role can read: a role without permissions makes no request at all', () => {

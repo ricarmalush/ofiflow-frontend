@@ -6,6 +6,7 @@ import { environment } from '../../../environments/environment';
 import { AuthTokens, LoginOutcome, MfaChallenge } from '../../shared/models/auth.model';
 import { OperationResult } from '../../shared/models/result.model';
 import { extractErrorMessage, toOperationResult } from '../utils/http-result.util';
+import { AccountService } from './account';
 import { CurrentSessionService } from './current-session';
 
 const ACCESS_TOKEN_KEY = 'ofiflow_access_token';
@@ -31,6 +32,7 @@ export class AuthService {
     private http = inject(HttpClient);
     private router = inject(Router);
     private currentSession = inject(CurrentSessionService);
+    private accountService = inject(AccountService);
     private authUrl = `${environment.apiUrl}/auth`;
 
     // Refresh en curso, compartido. La API rota el refresh token y, si ve usar dos veces el mismo,
@@ -79,7 +81,12 @@ export class AuthService {
         }
 
         this.refreshInFlight ??= this.http.post<AuthTokens>(`${this.authUrl}/refresh`, { refreshToken }).pipe(
-            tap((tokens) => this.storeSession(tokens)),
+            tap((tokens) => {
+                this.storeSession(tokens);
+                // Renovar la sesión es el momento de volver a preguntar quién soy: si un gestor cambió mi rol desde
+                // que se cargó la cuenta, hasta ahora el token nuevo lo reflejaba y la cuenta no. Sin esperar la respuesta.
+                this.accountService.load().subscribe();
+            }),
             map(() => true),
             catchError(() => {
                 this.clearSession();

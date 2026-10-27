@@ -6,6 +6,7 @@ import { StyleClassModule } from 'primeng/styleclass';
 import { AppConfigurator } from './app.configurator';
 import { LayoutService } from '@/app/layout/service/layout.service';
 import { AuthService } from '@/app/core/services/auth';
+import { CurrentSessionService } from '@/app/core/services/current-session';
 
 @Component({
     selector: 'app-topbar',
@@ -39,6 +40,12 @@ import { AuthService } from '@/app/core/services/auth';
         </div>
 
         <div class="layout-topbar-actions">
+            @if (account(); as account) {
+                <div class="hidden md:block text-right leading-tight" data-testid="topbar-account">
+                    <div class="font-medium">{{ account.tenantName }}</div>
+                    <div class="text-sm text-muted-color">{{ account.name }}</div>
+                </div>
+            }
             <div class="layout-config-menu">
                 <button type="button" class="layout-topbar-action" (click)="toggleDarkMode()">
                     <i [ngClass]="{ 'pi ': true, 'pi-moon': layoutService.isDarkTheme(), 'pi-sun': !layoutService.isDarkTheme() }"></i>
@@ -92,6 +99,9 @@ export class AppTopbar {
     layoutService = inject(LayoutService);
 
     authService = inject(AuthService);
+
+    // Empresa y persona que han entrado, tal como las devuelve GET /account/me (no se leen del token).
+    readonly account = inject(CurrentSessionService).account;
 
     toggleDarkMode() {
         this.layoutService.layoutConfig.update((state) => ({

@@ -43,6 +43,9 @@
                     (ngModelChange)="statusFilter.set($event)"
                     styleClass="w-full md:w-56"
                 />
+                @if (myMembershipId()) {
+                    <p-button label="Solo mis trabajos" icon="pi pi-user" severity="secondary" [outlined]="!onlyMine()" [attr.aria-pressed]="onlyMine()" (onClick)="onlyMine.set(!onlyMine())" />
+                }
             </div>
         </ng-template>
 

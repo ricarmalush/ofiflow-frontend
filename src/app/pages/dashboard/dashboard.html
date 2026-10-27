@@ -37,7 +37,7 @@
     } @else {
         @for (tile of tiles(); track tile.label) {
             <div class="col-span-12 md:col-span-6 xl:col-span-3">
-                <a [routerLink]="tile.link" class="card mb-0 block no-underline" [attr.aria-label]="tile.label + ': ' + tile.value">
+                <a [routerLink]="tile.link" [queryParams]="tile.queryParams" class="card mb-0 block no-underline" [attr.aria-label]="tile.label + ': ' + tile.value">
                     <div class="flex justify-between">
                         <div>
                             <span class="block text-muted-color font-medium mb-4">{{ tile.label }}</span>
