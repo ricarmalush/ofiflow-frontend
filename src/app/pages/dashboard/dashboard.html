@@ -1,0 +1,107 @@
+<div class="grid grid-cols-12 gap-8">
+    <div class="col-span-12">
+        <div class="font-semibold text-xl mb-1">Bienvenido a OfiFlow</div>
+        <p class="text-muted-color m-0">Un vistazo a tu empresa.</p>
+    </div>
+
+    @if (customersError()) {
+        <div class="col-span-12">
+            <p-message severity="error" styleClass="w-full">No se pudieron cargar los clientes: {{ customersError() }}</p-message>
+        </div>
+    }
+    @if (jobsError()) {
+        <div class="col-span-12">
+            <p-message severity="error" styleClass="w-full">No se pudieron cargar los trabajos: {{ jobsError() }}</p-message>
+        </div>
+    }
+    @if (customersError() || jobsError()) {
+        <div class="col-span-12">
+            <p-button label="Reintentar" icon="pi pi-refresh" severity="secondary" [outlined]="true" (onClick)="load()" />
+        </div>
+    }
+
+    @if (loading()) {
+        <div class="col-span-12">
+            <div class="card text-muted-color" role="status">Cargando…</div>
+        </div>
+    } @else if (isEmpty()) {
+        <div class="col-span-12">
+            <div class="card">
+                <div class="font-semibold text-lg mb-2">Aún no hay nada que mostrar</div>
+                <p class="text-muted-color mt-0 mb-4">Empieza dando de alta a tu primer cliente; después podrás crearle trabajos.</p>
+                @if (canCreateCustomers) {
+                    <p-button label="Crear cliente" icon="pi pi-plus" routerLink="/customers/new" />
+                }
+            </div>
+        </div>
+    } @else {
+        @for (tile of tiles(); track tile.label) {
+            <div class="col-span-12 md:col-span-6 xl:col-span-3">
+                <a [routerLink]="tile.link" class="card mb-0 block no-underline" [attr.aria-label]="tile.label + ': ' + tile.value">
+                    <div class="flex justify-between">
+                        <div>
+                            <span class="block text-muted-color font-medium mb-4">{{ tile.label }}</span>
+                            <div class="text-surface-900 dark:text-surface-0 font-medium text-2xl">{{ tile.value }}</div>
+                        </div>
+                        <div class="flex items-center justify-center rounded-border {{ tile.iconBox }}" style="width: 2.5rem; height: 2.5rem">
+                            <i class="pi {{ tile.icon }} {{ tile.iconColor }} text-xl!"></i>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        }
+
+        @if (canSeeJobs && !jobsError()) {
+            <div class="col-span-12 xl:col-span-7">
+                <div class="card">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="font-semibold text-xl">Requieren atención</div>
+                        <a routerLink="/jobs" class="text-primary font-medium">Ver todos los trabajos</a>
+                    </div>
+
+                    @if (attention().length === 0) {
+                        <p class="text-muted-color m-0">No hay ningún trabajo abierto con prioridad alta o urgente.</p>
+                    } @else {
+                        <ul class="list-none p-0 m-0">
+                            @for (job of attention(); track job.id) {
+                                <li class="flex flex-wrap items-center justify-between gap-2 py-3 border-b border-surface last:border-b-0">
+                                    <div class="min-w-0">
+                                        @if (canEditJobs) {
+                                            <a [routerLink]="['/jobs', job.id]" class="font-medium text-surface-900 dark:text-surface-0 no-underline hover:underline">{{ job.title }}</a>
+                                        } @else {
+                                            <span class="font-medium text-surface-900 dark:text-surface-0">{{ job.title }}</span>
+                                        }
+                                        <div class="text-muted-color text-sm">{{ job.customerName }}</div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <p-tag [value]="priorityLabel(job.priority)" [severity]="prioritySeverity(job.priority)" />
+                                        <p-tag [value]="statusLabel(job.status)" [severity]="statusSeverity(job.status)" />
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            <div class="col-span-12 xl:col-span-5">
+                <div class="card">
+                    <div class="font-semibold text-xl mb-4">Trabajos por estado</div>
+                    <ul class="list-none p-0 m-0">
+                        @for (row of statusRows(); track row.status) {
+                            <li class="mb-4 last:mb-0">
+                                <div class="flex justify-between mb-1">
+                                    <span>{{ row.label }}</span>
+                                    <span class="text-muted-color">{{ row.count }}</span>
+                                </div>
+                                <div class="rounded-border bg-surface-200 dark:bg-surface-700" style="height: 0.5rem" role="progressbar" [attr.aria-label]="row.label" [attr.aria-valuenow]="row.percent" aria-valuemin="0" aria-valuemax="100">
+                                    <div class="rounded-border bg-primary" style="height: 0.5rem" [style.width.%]="row.percent"></div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
+    }
+</div>

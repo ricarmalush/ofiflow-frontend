@@ -14,7 +14,7 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { forkJoin, of } from 'rxjs';
 import { CurrentSessionService } from '../../../../core/services/current-session';
 import { escapeHtml } from '../../../../core/utils/escape-html.util';
-import { Job, JOB_PRIORITY_LABELS, JOB_STATUS_LABELS, JobPriority, JobStatus, canCancel, canComplete, canStart } from '../../../../shared/models/job.model';
+import { Job, JOB_PRIORITY_LABELS, JOB_STATUS_LABELS, JobPriority, JobStatus, TagSeverity, canCancel, canComplete, canStart, jobPrioritySeverity, jobStatusSeverity } from '../../../../shared/models/job.model';
 import { CustomerService } from '../../../customers/services/customer.service';
 import { TeamService } from '../../../team/services/team.service';
 import { JobService, JobTransition } from '../../services/job.service';
@@ -99,25 +99,16 @@ export class JobListComponent implements OnInit {
         return JOB_STATUS_LABELS[status] ?? status;
     }
 
-    statusSeverity(status: JobStatus): 'info' | 'warn' | 'success' | 'secondary' | 'contrast' {
-        switch (status) {
-            case 'InProgress':
-                return 'warn';
-            case 'Completed':
-                return 'success';
-            case 'Cancelled':
-                return 'secondary';
-            default:
-                return 'info';
-        }
+    statusSeverity(status: JobStatus): TagSeverity {
+        return jobStatusSeverity(status);
     }
 
     priorityLabel(priority: JobPriority): string {
         return JOB_PRIORITY_LABELS[priority] ?? priority;
     }
 
-    prioritySeverity(priority: JobPriority): 'danger' | 'warn' | 'secondary' | 'contrast' {
-        return priority === 'Urgent' ? 'danger' : priority === 'High' ? 'warn' : 'secondary';
+    prioritySeverity(priority: JobPriority): TagSeverity {
+        return jobPrioritySeverity(priority);
     }
 
     onSearch(table: Table, event: Event): void {

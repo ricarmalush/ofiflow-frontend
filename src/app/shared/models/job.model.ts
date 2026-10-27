@@ -19,6 +19,27 @@ export const JOB_PRIORITY_LABELS: Readonly<Record<JobPriority, string>> = {
     Urgent: 'Urgente'
 };
 
+export type TagSeverity = 'info' | 'warn' | 'success' | 'secondary' | 'contrast' | 'danger';
+
+// Cómo se pinta cada estado y cada prioridad. Está aquí, y no en cada pantalla, para que la lista
+// de trabajos y el dashboard muestren lo mismo del mismo modo.
+export function jobStatusSeverity(status: JobStatus): TagSeverity {
+    switch (status) {
+        case 'InProgress':
+            return 'warn';
+        case 'Completed':
+            return 'success';
+        case 'Cancelled':
+            return 'secondary';
+        default:
+            return 'info';
+    }
+}
+
+export function jobPrioritySeverity(priority: JobPriority): TagSeverity {
+    return priority === 'Urgent' ? 'danger' : priority === 'High' ? 'warn' : 'secondary';
+}
+
 // Límites de OfiFlow.Domain.Jobs.Job.
 export const JOB_LIMITS = {
     titleMaxLength: 200,
