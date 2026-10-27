@@ -29,7 +29,7 @@
             <div class="card">
                 <div class="font-semibold text-lg mb-2">Aún no hay nada que mostrar</div>
                 <p class="text-muted-color mt-0 mb-4">Empieza dando de alta a tu primer cliente; después podrás crearle trabajos.</p>
-                @if (canCreateCustomers) {
+                @if (canCreateCustomers()) {
                     <p-button label="Crear cliente" icon="pi pi-plus" routerLink="/customers/new" />
                 }
             </div>
@@ -51,7 +51,7 @@
             </div>
         }
 
-        @if (canSeeJobs && !jobsError()) {
+        @if (canSeeJobs() && !jobsError()) {
             <div class="col-span-12 xl:col-span-7">
                 <div class="card">
                     <div class="flex items-center justify-between mb-4">
@@ -66,7 +66,7 @@
                             @for (job of attention(); track job.id) {
                                 <li class="flex flex-wrap items-center justify-between gap-2 py-3 border-b border-surface last:border-b-0">
                                     <div class="min-w-0">
-                                        @if (canEditJobs) {
+                                        @if (canEditJobs()) {
                                             <a [routerLink]="['/jobs', job.id]" class="font-medium text-surface-900 dark:text-surface-0 no-underline hover:underline">{{ job.title }}</a>
                                         } @else {
                                             <span class="font-medium text-surface-900 dark:text-surface-0">{{ job.title }}</span>

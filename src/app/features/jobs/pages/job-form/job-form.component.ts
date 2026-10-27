@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MessageService } from 'primeng/api';
@@ -43,7 +43,7 @@ export class JobFormComponent implements OnInit {
     readonly priorityOptions = (Object.keys(JOB_PRIORITY_LABELS) as JobPriority[]).map((value) => ({ label: JOB_PRIORITY_LABELS[value], value }));
 
     // Asignar exige Jobs.Assign y, para elegir a quién, poder ver el equipo (Users.Read).
-    readonly canAssign = this.session.can('Jobs.Assign') && this.session.can('Users.Read');
+    readonly canAssign = computed(() => this.session.can('Jobs.Assign') && this.session.can('Users.Read'));
 
     readonly jobId = signal<string | null>(null);
     readonly status = signal<JobStatus | null>(null);
@@ -75,7 +75,7 @@ export class JobFormComponent implements OnInit {
         this.loading.set(true);
         forkJoin({
             customers: this.customerService.list(),
-            members: this.canAssign && id ? this.teamService.list() : of(null),
+            members: this.canAssign() && id ? this.teamService.list() : of(null),
             job: id ? this.jobService.get(id) : of(null)
         }).subscribe(({ customers, members, job }) => {
             this.loading.set(false);

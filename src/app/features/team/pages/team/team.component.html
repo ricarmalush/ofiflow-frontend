@@ -4,7 +4,7 @@
             <div class="font-semibold text-xl">Equipo</div>
         </ng-template>
         <ng-template #end>
-            @if (canManageUsers && grantableRoles.length) {
+            @if (canManageUsers() && grantableRoles().length) {
                 <p-button label="Invitar" icon="pi pi-user-plus" (onClick)="openInvite()" />
             }
         </ng-template>
@@ -21,7 +21,7 @@
                 <th>Email</th>
                 <th pSortableColumn="role">Rol <p-sortIcon field="role" /></th>
                 <th pSortableColumn="joinedAt">Desde <p-sortIcon field="joinedAt" /></th>
-                @if (canManageUsers) {
+                @if (canManageUsers()) {
                     <th class="w-32"></th>
                 }
             </tr>
@@ -39,7 +39,7 @@
                 <td>
                     @if (canActOn(member)) {
                         <p-select
-                            [options]="grantableRoles"
+                            [options]="grantableRoles()"
                             optionLabel="label"
                             optionValue="value"
                             [ngModel]="member.role"
@@ -53,7 +53,7 @@
                     }
                 </td>
                 <td>{{ member.joinedAt | date: 'dd/MM/yyyy' }}</td>
-                @if (canManageUsers) {
+                @if (canManageUsers()) {
                     <td class="text-right whitespace-nowrap">
                         @if (canActOn(member)) {
                             <p-button icon="pi pi-key" severity="warn" [rounded]="true" [text]="true" ariaLabel="Reiniciar segundo factor" [disabled]="busyId() === member.id" (onClick)="confirmResetMfa(member)" />
@@ -66,7 +66,7 @@
     </p-table>
 </div>
 
-@if (canManageUsers) {
+@if (canManageUsers()) {
     <div class="card">
         <div class="font-semibold text-xl mb-4">Invitaciones pendientes</div>
         <p-table [value]="invitations()" dataKey="id">
@@ -112,7 +112,7 @@
             </div>
             <div class="flex flex-col gap-2">
                 <label for="inviteRole" class="font-medium">Rol</label>
-                <p-select inputId="inviteRole" formControlName="role" [options]="grantableRoles" optionLabel="label" optionValue="value" styleClass="w-full" appendTo="body" />
+                <p-select inputId="inviteRole" formControlName="role" [options]="grantableRoles()" optionLabel="label" optionValue="value" styleClass="w-full" appendTo="body" />
             </div>
             <div class="flex justify-end gap-2">
                 <p-button type="button" label="Cancelar" severity="secondary" [text]="true" (onClick)="closeInvite()" />

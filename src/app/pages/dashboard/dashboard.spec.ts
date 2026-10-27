@@ -114,6 +114,22 @@ describe('Dashboard', () => {
         expect(tile?.getAttribute('href')).toBe('/jobs?mine=1');
     });
 
+    it('the tiles follow a role change without reloading the page', () => {
+        start('Manager', { membershipId: 'm-me' });
+        httpMock.expectOne(customersUrl).flush([customer('c1', 'Marta')]);
+        httpMock.expectOne(jobsUrl).flush([job('j1', 'Avería', 'New', 'Normal', { assignedTenantUserId: 'm-me' })]);
+        fixture.detectChanges();
+        expect(tileLabels()).toContain('Asignados a mí: 1');
+        expect(tileLabels()).toContain('Sin asignar: 0');
+
+        // Un gestor me ha bajado a Empleado: llega la cuenta nueva (sin Jobs.Execute ni Jobs.Assign).
+        TestBed.inject(CurrentSessionService).setAccount(buildAccount({ role: 'Employee', membershipId: 'm-me' }));
+        fixture.detectChanges();
+
+        expect(tileLabels().some((label) => label?.startsWith('Asignados a mí'))).toBeFalse();
+        expect(tileLabels().some((label) => label?.startsWith('Sin asignar'))).toBeFalse();
+    });
+
     it('has no "assigned to me" tile for roles that cannot execute jobs', () => {
         start('Employee');
         httpMock.expectOne(customersUrl).flush([customer('c1', 'Marta')]);

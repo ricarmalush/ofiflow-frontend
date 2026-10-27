@@ -4,7 +4,7 @@
             <div class="font-semibold text-xl">Trabajos</div>
         </ng-template>
         <ng-template #end>
-            @if (canWrite) {
+            @if (canWrite()) {
                 <p-button label="Nuevo trabajo" icon="pi pi-plus" routerLink="/jobs/new" />
             }
         </ng-template>
@@ -68,16 +68,16 @@
                 <td><p-tag [value]="priorityLabel(job.priority)" [severity]="prioritySeverity(job.priority)" /></td>
                 <td>{{ job.assigneeName }}</td>
                 <td class="text-right whitespace-nowrap">
-                    @if (canExecute && canStart(job.status)) {
+                    @if (canExecute() && canStart(job.status)) {
                         <p-button icon="pi pi-play" [rounded]="true" [text]="true" ariaLabel="Iniciar"[disabled]="busyJobId() === job.id" (onClick)="run(job, 'start')" />
                     }
-                    @if (canExecute && canComplete(job.status)) {
+                    @if (canExecute() && canComplete(job.status)) {
                         <p-button icon="pi pi-check" severity="success" [rounded]="true" [text]="true" ariaLabel="Completar" [disabled]="busyJobId() === job.id" (onClick)="run(job, 'complete')" />
                     }
-                    @if (canWrite) {
+                    @if (canWrite()) {
                         <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" ariaLabel="Editar" [routerLink]="['/jobs', job.id]" />
                     }
-                    @if (canCancelJobs && canCancel(job.status)) {
+                    @if (canCancelJobs() && canCancel(job.status)) {
                         <p-button icon="pi pi-times" severity="danger" [rounded]="true" [text]="true" ariaLabel="Cancelar" [disabled]="busyJobId() === job.id" (onClick)="run(job, 'cancel')" />
                     }
                 </td>

@@ -54,12 +54,12 @@ export class JobListComponent implements OnInit {
     readonly busyJobId = signal<string | null>(null);
     readonly statusFilter = signal<JobStatus | null>(null);
 
-    readonly canWrite = this.session.can('Jobs.Write');
-    readonly canExecute = this.session.can('Jobs.Execute');
-    readonly canCancelJobs = this.session.can('Jobs.Cancel');
+    readonly canWrite = computed(() => this.session.can('Jobs.Write'));
+    readonly canExecute = computed(() => this.session.can('Jobs.Execute'));
+    readonly canCancelJobs = computed(() => this.session.can('Jobs.Cancel'));
     // Sin Users.Read (Employee, Technician) la API no deja listar el equipo: el asignado se ve
     // como "Asignado", sin nombre.
-    private readonly canSeeTeam = this.session.can('Users.Read');
+    private readonly canSeeTeam = computed(() => this.session.can('Users.Read'));
 
     readonly statusOptions = (Object.keys(JOB_STATUS_LABELS) as JobStatus[]).map((value) => ({ label: JOB_STATUS_LABELS[value], value }));
 
@@ -93,7 +93,7 @@ export class JobListComponent implements OnInit {
         forkJoin({
             jobs: this.jobService.list(),
             customers: this.customerService.list(),
-            members: this.canSeeTeam ? this.teamService.list() : of(null)
+            members: this.canSeeTeam() ? this.teamService.list() : of(null)
         }).subscribe(({ jobs, customers, members }) => {
             this.loading.set(false);
             this.jobs.set(jobs.data ?? []);

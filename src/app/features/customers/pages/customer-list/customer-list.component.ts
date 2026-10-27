@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -32,8 +32,8 @@ export class CustomerListComponent implements OnInit {
 
     // Qué botones pintar. Si el rol no puede, el botón no aparece; si aun así llegara la
     // petición, la API respondería 403.
-    readonly canWrite = this.session.can('Customers.Write');
-    readonly canDelete = this.session.can('Customers.Delete');
+    readonly canWrite = computed(() => this.session.can('Customers.Write'));
+    readonly canDelete = computed(() => this.session.can('Customers.Delete'));
 
     ngOnInit(): void {
         this.fetch();

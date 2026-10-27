@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -36,10 +36,13 @@ export class TeamComponent implements OnInit {
     readonly errorMessage = signal<string | null>(null);
     readonly busyId = signal<string | null>(null);
 
-    readonly canManageUsers = this.session.can('Users.Manage');
-    private readonly actorRole = this.session.role();
+    readonly canManageUsers = computed(() => this.session.can('Users.Manage'));
+    private readonly actorRole = this.session.role;
     // Los roles que este usuario puede conceder: el desplegable de invitar y el de cambiar rol.
-    readonly grantableRoles = (this.actorRole ? MANAGEABLE_ROLES[this.actorRole] : []).map((value) => ({ label: ROLE_LABELS[value], value }));
+    readonly grantableRoles = computed(() => {
+        const role = this.actorRole();
+        return (role ? MANAGEABLE_ROLES[role] : []).map((value) => ({ label: ROLE_LABELS[value], value }));
+    });
 
     // Diálogo de invitar. Tras crearla, el mismo diálogo enseña el enlace (una sola vez).
     inviteOpen = false;
@@ -62,7 +65,7 @@ export class TeamComponent implements OnInit {
     // ¿Puedo cambiar, quitar o reiniciar el MFA de este miembro? Nunca a uno mismo ni al Owner,
     // y un Admin no toca a otro Admin. La API lo vuelve a comprobar y respondería 403.
     canActOn(member: TeamMember): boolean {
-        return this.canManageUsers && !member.isCurrentUser && canManage(this.actorRole, member.role);
+        return this.canManageUsers() && !member.isCurrentUser && canManage(this.actorRole(), member.role);
     }
 
     changeRole(member: TeamMember, role: TenantRole): void {
@@ -104,7 +107,7 @@ export class TeamComponent implements OnInit {
     }
 
     openInvite(): void {
-        this.inviteForm.reset({ email: '', role: this.grantableRoles.at(-1)?.value ?? 'Employee' });
+        this.inviteForm.reset({ email: '', role: this.grantableRoles().at(-1)?.value ?? 'Employee' });
         this.inviteError.set(null);
         this.inviteLink.set(null);
         this.inviteOpen = true;
@@ -187,7 +190,7 @@ export class TeamComponent implements OnInit {
     }
 
     private loadInvitations(): void {
-        if (!this.canManageUsers) {
+        if (!this.canManageUsers()) {
             return;
         }
         this.teamService.listInvitations().subscribe((result) => this.invitations.set(result.data ?? []));

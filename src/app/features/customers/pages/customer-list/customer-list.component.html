@@ -4,7 +4,7 @@
             <div class="font-semibold text-xl">Clientes</div>
         </ng-template>
         <ng-template #end>
-            @if (canWrite) {
+            @if (canWrite()) {
                 <p-button label="Nuevo cliente" icon="pi pi-plus" routerLink="/customers/new" />
             }
         </ng-template>
@@ -41,7 +41,7 @@
                 <th pSortableColumn="type">Tipo <p-sortIcon field="type" /></th>
                 <th>Email</th>
                 <th>Teléfono</th>
-                @if (canWrite || canDelete) {
+                @if (canWrite() || canDelete()) {
                     <th class="w-32"></th>
                 }
             </tr>
@@ -55,12 +55,12 @@
                 </td>
                 <td>{{ customer.email ?? '—' }}</td>
                 <td>{{ customer.phone ?? '—' }}</td>
-                @if (canWrite || canDelete) {
+                @if (canWrite() || canDelete()) {
                     <td class="text-right whitespace-nowrap">
-                        @if (canWrite) {
+                        @if (canWrite()) {
                             <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" ariaLabel="Editar" [routerLink]="['/customers', customer.id]" />
                         }
-                        @if (canDelete) {
+                        @if (canDelete()) {
                             <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [text]="true" ariaLabel="Eliminar" (onClick)="confirmDelete(customer)" />
                         }
                     </td>

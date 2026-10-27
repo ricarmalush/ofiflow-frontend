@@ -37,12 +37,12 @@ export class Dashboard implements OnInit {
     private jobService = inject(JobService);
     private session = inject(CurrentSessionService);
 
-    readonly canSeeCustomers = this.session.can('Customers.Read');
-    readonly canSeeJobs = this.session.can('Jobs.Read');
-    private readonly canAssign = this.session.can('Jobs.Assign');
-    private readonly canExecute = this.session.can('Jobs.Execute');
-    readonly canEditJobs = this.session.can('Jobs.Write');
-    readonly canCreateCustomers = this.session.can('Customers.Write');
+    readonly canSeeCustomers = computed(() => this.session.can('Customers.Read'));
+    readonly canSeeJobs = computed(() => this.session.can('Jobs.Read'));
+    private readonly canAssign = computed(() => this.session.can('Jobs.Assign'));
+    private readonly canExecute = computed(() => this.session.can('Jobs.Execute'));
+    readonly canEditJobs = computed(() => this.session.can('Jobs.Write'));
+    readonly canCreateCustomers = computed(() => this.session.can('Customers.Write'));
 
     readonly loading = signal(true);
     private readonly customers = signal<Customer[]>([]);
@@ -58,19 +58,19 @@ export class Dashboard implements OnInit {
         const tiles: Tile[] = [];
         const summary = this.summary();
 
-        if (this.canSeeCustomers && !this.customersError()) {
+        if (this.canSeeCustomers() && !this.customersError()) {
             tiles.push({ label: 'Clientes', value: this.customers().length, icon: 'pi-users', iconBox: 'bg-blue-100 dark:bg-blue-400/10', iconColor: 'text-blue-500', link: '/customers' });
         }
-        if (this.canSeeJobs && !this.jobsError()) {
+        if (this.canSeeJobs() && !this.jobsError()) {
             tiles.push({ label: 'Trabajos abiertos', value: summary.open, icon: 'pi-briefcase', iconBox: 'bg-cyan-100 dark:bg-cyan-400/10', iconColor: 'text-cyan-500', link: '/jobs' });
             // «Mis trabajos» tiene sentido para quien los ejecuta (un técnico, un responsable): es lo primero que quiere ver.
-            if (this.canExecute && this.session.membershipId()) {
+            if (this.canExecute() && this.session.membershipId()) {
                 tiles.push({ label: 'Asignados a mí', value: summary.assignedToMe, icon: 'pi-user', iconBox: 'bg-teal-100 dark:bg-teal-400/10', iconColor: 'text-teal-500', link: '/jobs', queryParams: { mine: '1' } });
             }
             tiles.push({ label: 'En curso', value: summary.inProgress, icon: 'pi-play', iconBox: 'bg-green-100 dark:bg-green-400/10', iconColor: 'text-green-500', link: '/jobs' });
             tiles.push({ label: 'Urgentes y altas', value: summary.highPriority, icon: 'pi-exclamation-triangle', iconBox: 'bg-orange-100 dark:bg-orange-400/10', iconColor: 'text-orange-500', link: '/jobs' });
             // Repartir trabajo es cosa de quien puede asignar: para el resto, "sin asignar" no es una acción suya.
-            if (this.canAssign) {
+            if (this.canAssign()) {
                 tiles.push({ label: 'Sin asignar', value: summary.unassigned, icon: 'pi-user-minus', iconBox: 'bg-purple-100 dark:bg-purple-400/10', iconColor: 'text-purple-500', link: '/jobs' });
             }
         }
@@ -99,8 +99,8 @@ export class Dashboard implements OnInit {
     load(): void {
         this.loading.set(true);
         forkJoin({
-            customers: this.canSeeCustomers ? this.customerService.list() : of(null),
-            jobs: this.canSeeJobs ? this.jobService.list() : of(null)
+            customers: this.canSeeCustomers() ? this.customerService.list() : of(null),
+            jobs: this.canSeeJobs() ? this.jobService.list() : of(null)
         }).subscribe(({ customers, jobs }) => {
             this.customers.set(customers?.data ?? []);
             this.jobs.set(jobs?.data ?? []);

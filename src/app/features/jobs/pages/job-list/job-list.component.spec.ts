@@ -103,6 +103,20 @@ describe('JobListComponent · my jobs', () => {
         expect(titles(host).filter((title) => title && !title.startsWith('No hay'))).toEqual([]);
     });
 
+    it('the action buttons follow a role change WITHOUT navigating (the account is reloaded after a 403)', async () => {
+        const host = await open('Technician');
+        const labels = () => Array.from(host.querySelectorAll('tbody tr button')).map((button) => button.getAttribute('aria-label'));
+        expect(labels()).toContain('Iniciar');
+        expect(labels()).not.toContain('Editar');
+
+        // Lo que hace AccountService.load() cuando el interceptor ve un 403 auth.forbidden: llega la cuenta nueva.
+        TestBed.inject(CurrentSessionService).setAccount(buildAccount({ role: 'Employee', membershipId: ME }));
+        harness.detectChanges();
+
+        expect(labels()).not.toContain('Iniciar');
+        expect(labels()).toContain('Editar');
+    });
+
     it('with no account loaded at all (membership null) ?mine=1 does not turn the UNASSIGNED jobs into "mine"', async () => {
         const host = await open('Technician', '?mine=1', null);
 
