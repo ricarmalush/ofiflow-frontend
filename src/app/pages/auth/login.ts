@@ -47,7 +47,7 @@ import { AppFloatingConfigurator } from '../../layout/component/app.floatingconf
                         </div>
 
                         @if (info() && !error()) {
-                            <p-message severity="success" styleClass="mb-6 w-full md:w-120">{{ info() }}</p-message>
+                            <p-message [severity]="infoSeverity()" styleClass="mb-6 w-full md:w-120">{{ info() }}</p-message>
                         }
 
                         @if (error()) {
@@ -116,6 +116,8 @@ export class Login {
     // Aviso de otra pantalla (cuenta creada, sesiones cerradas...). Llega en el estado de la
     // navegación, no en la URL, y se pinta como texto.
     readonly info = signal<string | null>(typeof history.state?.info === 'string' ? history.state.info : null);
+    // "warn" si quien cerró la sesión avisa de algo que hay que atender (empresa suspendida); en cualquier otro caso, "success".
+    readonly infoSeverity = signal<'success' | 'warn'>(history.state?.infoSeverity === 'warn' ? 'warn' : 'success');
 
     // El desafío vive solo en memoria: es de un solo uso y caduca en minutos, no se guarda.
     private challenge: string | null = null;

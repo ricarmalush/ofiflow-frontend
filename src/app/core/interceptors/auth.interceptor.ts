@@ -2,6 +2,8 @@ import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/comm
 import { inject } from '@angular/core';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { ProblemDetails } from '../../shared/models/problem-details.model';
+import { TENANT_SUSPENDED_CODE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
 import { AuthService } from '../services/auth';
 
 // Rutas anónimas de la API: no llevan token, y su 401 es una respuesta normal del flujo
@@ -10,6 +12,12 @@ const AUTH_ROUTES = `${environment.apiUrl}/auth/`;
 
 function withToken(req: HttpRequest<unknown>, token: string | null): HttpRequest<unknown> {
     return token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
+}
+
+// Se decide por el código estable, nunca por el texto ni solo por el 403: un 403 también es
+// "tu rol no puede hacer esto" (auth.forbidden), y eso no cierra la sesión.
+function isTenantSuspended(error: HttpErrorResponse): boolean {
+    return error.status === 403 && (error.error as ProblemDetails | null)?.code === TENANT_SUSPENDED_CODE;
 }
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
@@ -23,6 +31,14 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
     return next(withToken(req, authService.getToken())).pipe(
         catchError((error: HttpErrorResponse) => {
+            // La empresa está suspendida (spec 011): ni renovar la sesión ni reintentar sirven de nada,
+            // porque la API rechaza cada petición mientras dure. Se cierra la sesión con un aviso que lo
+            // explica, en vez de dejar al usuario ante errores sueltos en cada pantalla.
+            if (isTenantSuspended(error)) {
+                authService.logout((error.error as ProblemDetails).detail || TENANT_SUSPENDED_MESSAGE, 'warn');
+                return throwError(() => error);
+            }
+
             if (error.status !== 401) {
                 return throwError(() => error);
             }

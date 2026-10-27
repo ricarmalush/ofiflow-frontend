@@ -112,10 +112,14 @@ export class AuthService {
     // Solo local: la API no tiene endpoint de logout. El refresh token sigue siendo válido en el
     // servidor hasta que caduca (pendiente en la API); aquí deja de estar en el navegador.
     // info: un aviso para la pantalla de login (p. ej. "se cerraron tus sesiones"). Viaja en el
-    // estado de la navegación, no en la URL.
-    logout(info?: string): void {
+    // estado de la navegación, no en la URL. severity: cómo se pinta (por defecto "success", que es
+    // lo que cuentan los avisos de "todo bien"; "warn" para algo que el usuario debe atender, como
+    // una empresa suspendida).
+    logout(info?: string, severity: 'success' | 'warn' = 'success'): void {
         this.clearSession();
-        this.router.navigate(['/auth/login'], info ? { state: { info } } : undefined);
+        // Solo viaja la severidad si no es la de siempre: el estado de un aviso normal no cambia.
+        const state = severity === 'success' ? { info } : { info, infoSeverity: severity };
+        this.router.navigate(['/auth/login'], info ? { state } : undefined);
     }
 
     private clearSession(): void {

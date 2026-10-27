@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { LoginOutcome } from '../../shared/models/auth.model';
 import { OperationResult } from '../../shared/models/result.model';
@@ -128,6 +128,48 @@ describe('AuthService', () => {
             expect(refreshed).toBeFalse();
             expect(service.getToken()).toBeNull();
             expect(service.getRefreshToken()).toBeNull();
+        });
+    });
+
+    describe('company suspended (spec 011)', () => {
+        it('shows the API message when the login of a suspended company answers 403 (the credentials were right, so this is not a wrong password)', () => {
+            const message = 'La empresa está suspendida. Ponte en contacto con el soporte de OfiFlow.';
+            let outcome: LoginOutcome | undefined;
+            service.login('ana@empresa.com', 'secret').subscribe((o) => (outcome = o));
+
+            httpMock.expectOne(`${authUrl}/login`).flush({ code: 'tenant.suspended', detail: message }, { status: 403, statusText: 'Forbidden' });
+
+            expect(outcome).toEqual({ kind: 'failed', message });
+            expect(service.getToken()).toBeNull();
+        });
+    });
+
+    describe('logout', () => {
+        it('clears the session and carries the notice with its severity in the navigation state, not in the URL', () => {
+            const router = TestBed.inject(Router);
+            const navigate = spyOn(router, 'navigate').and.resolveTo(true);
+            service.storeSession(tokens);
+
+            service.logout('Tu empresa está suspendida.', 'warn');
+
+            expect(service.getToken()).toBeNull();
+            expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], { state: { info: 'Tu empresa está suspendida.', infoSeverity: 'warn' } });
+        });
+
+        it('keeps the navigation state of a normal notice exactly as it was (no severity travels)', () => {
+            const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+
+            service.logout('Se cerraron tus sesiones.');
+
+            expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], { state: { info: 'Se cerraron tus sesiones.' } });
+        });
+
+        it('navigates without state when there is no notice', () => {
+            const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+
+            service.logout();
+
+            expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], undefined);
         });
     });
 });

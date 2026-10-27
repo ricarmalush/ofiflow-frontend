@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { environment } from '../../../environments/environment';
+import { TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
 import { AuthService } from '../services/auth';
 import { buildSessionToken } from '../testing/fake-jwt';
 import { authInterceptor } from './auth.interceptor';
@@ -80,5 +81,48 @@ describe('authInterceptor', () => {
         req.flush(null, { status: 401, statusText: 'Unauthorized' });
 
         expect(authService.logout).not.toHaveBeenCalled();
+    });
+
+    describe('when the company is suspended (spec 011)', () => {
+        const suspended = { status: 403, statusText: 'Forbidden' };
+
+        it('logs out with the API message as a warning, and neither refreshes nor retries', () => {
+            spyOn(authService, 'logout');
+
+            let failed: unknown;
+            http.get(jobsUrl).subscribe({ error: (e) => (failed = e) });
+            httpMock.expectOne(jobsUrl).flush({ code: 'tenant.suspended', detail: 'La empresa está suspendida. Ponte en contacto con el soporte de OfiFlow.' }, suspended);
+
+            // httpMock.verify() (afterEach) comprueba que no hubo refresh ni reintento.
+            expect(authService.logout).toHaveBeenCalledOnceWith('La empresa está suspendida. Ponte en contacto con el soporte de OfiFlow.', 'warn');
+            expect(failed).toBeTruthy(); // y el error sigue llegando a quien llamó
+        });
+
+        it('uses a fallback message if the 403 comes without text', () => {
+            spyOn(authService, 'logout');
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush({ code: 'tenant.suspended' }, suspended);
+
+            expect(authService.logout).toHaveBeenCalledOnceWith(TENANT_SUSPENDED_MESSAGE, 'warn');
+        });
+
+        it('does NOT log out on a 403 for lack of permission: that one is about the role, not the session', () => {
+            spyOn(authService, 'logout');
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush({ code: 'auth.forbidden', detail: 'No tienes permiso.' }, suspended);
+
+            expect(authService.logout).not.toHaveBeenCalled();
+        });
+
+        it('does NOT log out on a 403 without a recognisable body', () => {
+            spyOn(authService, 'logout');
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush('<html>Forbidden</html>', suspended);
+
+            expect(authService.logout).not.toHaveBeenCalled();
+        });
     });
 });
