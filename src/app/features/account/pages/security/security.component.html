@@ -105,6 +105,19 @@
     }
 </div>
 
+@if (canCloseSessions()) {
+    <div class="card max-w-3xl">
+        <div class="font-semibold text-xl mb-2">Sesiones</div>
+        <p class="text-muted-color mb-6">Cierra tu sesión en todos tus dispositivos a la vez, por ejemplo si perdiste uno o crees que alguien más tiene acceso. Tendrás que volver a entrar también aquí.</p>
+
+        @if (sessionsError()) {
+            <p-message severity="error" styleClass="mb-6">{{ sessionsError() }}</p-message>
+        }
+
+        <p-button label="Cerrar todas mis sesiones" icon="pi pi-sign-out" severity="danger" [outlined]="true" [loading]="closingAll()" (onClick)="confirmCloseAllSessions()" />
+    </div>
+}
+
 <ng-template #passwordAndCode let-submitLabel="submitLabel" let-danger="danger">
     <form [formGroup]="passwordAndCodeForm" (ngSubmit)="view() === 'disable' ? disable() : regenerate()" class="flex flex-col gap-4 max-w-md">
         <div class="flex flex-col gap-2">

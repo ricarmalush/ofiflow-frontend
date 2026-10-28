@@ -17,6 +17,7 @@ const REFRESH_TOKEN_KEY = 'ofiflow_refresh_token';
 // el cliente y tampoco distingue.
 export const INVALID_CREDENTIALS_MESSAGE = 'Email o contraseña incorrectos.';
 export const INVALID_MFA_CODE_MESSAGE = 'El código no es válido o ha caducado.';
+export const ALL_SESSIONS_CLOSED_MESSAGE = 'Se cerraron todas tus sesiones. Vuelve a entrar.';
 
 // Guarda la sesión y habla con /auth/login, /auth/mfa/verify y /auth/refresh.
 //
@@ -132,7 +133,27 @@ export class AuthService {
         if (refreshToken) {
             this.http.post<void>(`${this.authUrl}/logout`, { refreshToken }).subscribe({ error: () => undefined });
         }
+        this.goToLogin(info, severity);
+    }
 
+    // Cierra TODAS las sesiones de la cuenta en el servidor (DELETE /account/sessions, spec 014 de la API): revoca los
+    // refresh tokens de todos los dispositivos, incluido el de esta pestaña. A diferencia de logout(), aquí SÍ se espera
+    // la respuesta, y lo local solo se borra si el servidor confirmó: si falla (sin red, 429, 403) la persona sigue
+    // dentro y el error se le dice, porque «cerré todas mis sesiones» sin que fuera verdad sería peor que no haberlo
+    // intentado. No llama a /auth/logout después: el refresh token de esta pestaña ya está revocado por la misma petición.
+    // Límite conocido (de la API): un access token ya emitido vale hasta 30 min, pero ya no se puede renovar.
+    closeAllSessions(): Observable<OperationResult> {
+        return toOperationResult(this.http.delete<void>(`${environment.apiUrl}/account/sessions`)).pipe(
+            tap((result) => {
+                if (result.isSuccess) {
+                    this.clearSession();
+                    this.goToLogin(ALL_SESSIONS_CLOSED_MESSAGE, 'success');
+                }
+            })
+        );
+    }
+
+    private goToLogin(info: string | undefined, severity: 'success' | 'warn'): void {
         // Solo viaja la severidad si no es la de siempre: el estado de un aviso normal no cambia.
         const state = severity === 'success' ? { info } : { info, infoSeverity: severity };
         this.router.navigate(['/auth/login'], info ? { state } : undefined);

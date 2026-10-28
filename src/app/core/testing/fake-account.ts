@@ -5,14 +5,14 @@ import { TenantRole } from '../../shared/models/auth.model';
 // rol están escritas aquí A MANO y solo sirven para que los tests tengan un rol creíble: el código de
 // la aplicación NO las usa (los permisos reales los dice la API). Si el backend cambia la tabla, lo
 // que importa es que la aplicación obedezca a la API, no que estas listas coincidan.
-const OWNER = ['Account.Read', 'Customers.Delete', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage', 'Users.Manage', 'Users.Read'];
+const OWNER = ['Account.CloseSessions', 'Account.Read', 'Customers.Delete', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage', 'Users.Manage', 'Users.Read'];
 
 export const PERMISSIONS_OF: Readonly<Record<TenantRole, string[]>> = {
     Owner: OWNER,
     Admin: OWNER,
-    Manager: ['Account.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage', 'Users.Read'],
-    Employee: ['Account.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage'],
-    Technician: ['Account.Read', 'Customers.Read', 'Jobs.Execute', 'Jobs.Read', 'Mfa.Manage']
+    Manager: ['Account.CloseSessions', 'Account.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage', 'Users.Read'],
+    Employee: ['Account.CloseSessions', 'Account.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage'],
+    Technician: ['Account.CloseSessions', 'Account.Read', 'Customers.Read', 'Jobs.Execute', 'Jobs.Read', 'Mfa.Manage']
 };
 
 export function buildAccount(overrides: Partial<CurrentAccount> = {}): CurrentAccount {

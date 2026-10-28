@@ -19,4 +19,5 @@ export type Permission =
     | 'Users.Read'
     | 'Users.Manage'
     | 'Mfa.Manage'
-    | 'Account.Read';
+    | 'Account.Read'
+    | 'Account.CloseSessions';

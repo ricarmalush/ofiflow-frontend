@@ -281,4 +281,89 @@ describe('AuthService', () => {
             expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], undefined);
         });
     });
+
+    describe('closeAllSessions (spec 014)', () => {
+        const sessionsUrl = `${environment.apiUrl}/account/sessions`;
+        let navigate: jasmine.Spy;
+        let result: OperationResult | undefined;
+
+        beforeEach(() => {
+            navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+            result = undefined;
+            service.storeSession(tokens);
+        });
+
+        it('sends DELETE /account/sessions with no body (the account comes from the token)', () => {
+            service.closeAllSessions().subscribe();
+
+            const request = httpMock.expectOne(sessionsUrl);
+            expect(request.request.method).toBe('DELETE');
+            expect(request.request.body).toBeNull();
+            request.flush(null, { status: 204, statusText: 'No Content' });
+        });
+
+        it('on success clears the local session and goes to the login with the notice', () => {
+            const session = TestBed.inject(CurrentSessionService);
+
+            service.closeAllSessions().subscribe((r) => (result = r));
+            httpMock.expectOne(sessionsUrl).flush(null, { status: 204, statusText: 'No Content' });
+
+            expect(result?.isSuccess).toBeTrue();
+            expect(service.getToken()).toBeNull();
+            expect(service.getRefreshToken()).toBeNull();
+            expect(session.session()).toBeNull();
+            expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], { state: { info: 'Se cerraron todas tus sesiones. Vuelve a entrar.' } });
+        });
+
+        it('does NOT touch the local session until the server confirms (unlike logout)', () => {
+            service.closeAllSessions().subscribe();
+
+            expect(service.getToken()).toBe(tokens.accessToken);
+            expect(service.getRefreshToken()).toBe('refresh-1');
+            expect(navigate).not.toHaveBeenCalled();
+            httpMock.expectOne(sessionsUrl);
+        });
+
+        it('does not also call POST /auth/logout: the same request already revoked this tab\'s refresh token', () => {
+            service.closeAllSessions().subscribe();
+            httpMock.expectOne(sessionsUrl).flush(null, { status: 204, statusText: 'No Content' });
+
+            httpMock.expectNone(`${authUrl}/logout`);
+        });
+
+        it('on a server error keeps the session and reports the error', () => {
+            service.closeAllSessions().subscribe((r) => (result = r));
+            httpMock.expectOne(sessionsUrl).flush({ code: 'server.unexpected' }, { status: 500, statusText: 'Server Error' });
+
+            expect(result?.isSuccess).toBeFalse();
+            expect(result?.message).toBeTruthy();
+            expect(service.getToken()).toBe(tokens.accessToken);
+            expect(service.getRefreshToken()).toBe('refresh-1');
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
+        it('with no network keeps the session (saying "all closed" would be false) and reports it', () => {
+            service.closeAllSessions().subscribe((r) => (result = r));
+            httpMock.expectOne(sessionsUrl).error(new ProgressEvent('error'));
+
+            expect(result?.isSuccess).toBeFalse();
+            expect(service.getToken()).toBe(tokens.accessToken);
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
+        it('shows the API text when the rate limit answers 429, and keeps the session', () => {
+            service.closeAllSessions().subscribe((r) => (result = r));
+            httpMock.expectOne(sessionsUrl).flush({ detail: 'Demasiadas peticiones.' }, { status: 429, statusText: 'Too Many Requests' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'Demasiadas peticiones.' }));
+            expect(service.getToken()).toBe(tokens.accessToken);
+        });
+
+        it('does not retry when it fails', () => {
+            service.closeAllSessions().subscribe();
+            httpMock.expectOne(sessionsUrl).error(new ProgressEvent('error'));
+
+            httpMock.expectNone(sessionsUrl);
+        });
+    });
 });

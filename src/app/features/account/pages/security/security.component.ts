@@ -1,7 +1,7 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
 import { InputTextModule } from 'primeng/inputtext';
@@ -10,6 +10,7 @@ import { PasswordModule } from 'primeng/password';
 import { TagModule } from 'primeng/tag';
 import { Observable } from 'rxjs';
 import { AuthService } from '../../../../core/services/auth';
+import { CurrentSessionService } from '../../../../core/services/current-session';
 import { qrDataUrl } from '../../../../core/utils/qr.util';
 import { MfaStatus } from '../../../../shared/models/mfa.model';
 import { OperationResult } from '../../../../shared/models/result.model';
@@ -31,6 +32,8 @@ export class SecurityComponent implements OnInit {
     private mfaService = inject(MfaService);
     private authService = inject(AuthService);
     private messageService = inject(MessageService);
+    private confirmationService = inject(ConfirmationService);
+    private currentSession = inject(CurrentSessionService);
     private fb = inject(FormBuilder);
 
     readonly view = signal<View>('status');
@@ -38,6 +41,11 @@ export class SecurityComponent implements OnInit {
     readonly loading = signal(false);
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
+
+    // «Cerrar todas mis sesiones» (spec 014 de la API). Solo para pintar el botón: la API vuelve a comprobar el permiso.
+    readonly canCloseSessions = computed(() => this.currentSession.can('Account.CloseSessions'));
+    readonly closingAll = signal(false);
+    readonly sessionsError = signal<string | null>(null);
 
     // Secretos de un solo uso: solo en memoria, mientras dura el paso, y se borran al salir de él.
     readonly secret = signal<string | null>(null);
@@ -99,6 +107,31 @@ export class SecurityComponent implements OnInit {
         if (this.passwordAndCodeForm.invalid || this.busy()) return;
         const { password, code } = this.passwordAndCodeForm.getRawValue();
         this.run(this.mfaService.regenerateRecoveryCodes(password, code.trim()), (result) => this.showCodes(result.codes, false));
+    }
+
+    // Pide confirmación antes: es la única acción de esta pantalla que echa también a quien la pulsa, y no se deshace.
+    confirmCloseAllSessions(): void {
+        if (this.closingAll()) return;
+        this.confirmationService.confirm({
+            header: 'Cerrar todas mis sesiones',
+            message: 'Se cerrarán tus sesiones en todos tus dispositivos, también en este, y tendrás que volver a entrar. ¿Continuar?',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Cerrar todas',
+            rejectLabel: 'Volver',
+            acceptButtonStyleClass: 'p-button-danger',
+            rejectButtonStyleClass: 'p-button-secondary p-button-text',
+            accept: () => this.closeAllSessions()
+        });
+    }
+
+    // Si sale bien, AuthService borra lo local y lleva al login con el aviso; si falla, la persona sigue dentro y se le dice.
+    private closeAllSessions(): void {
+        this.closingAll.set(true);
+        this.sessionsError.set(null);
+        this.authService.closeAllSessions().subscribe((result) => {
+            this.closingAll.set(false);
+            if (!result.isSuccess) this.sessionsError.set(result.message);
+        });
     }
 
     copyCodes(): void {
