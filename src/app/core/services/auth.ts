@@ -116,14 +116,23 @@ export class AuthService {
         return !!this.getToken() && !this.currentSession.isExpired();
     }
 
-    // Solo local: la API no tiene endpoint de logout. El refresh token sigue siendo válido en el
-    // servidor hasta que caduca (pendiente en la API); aquí deja de estar en el navegador.
+    // Cierra la sesión aquí Y en el servidor (POST /auth/logout, spec 013 de la API): sin lo segundo, un refresh token
+    // copiado seguiría renovando la sesión hasta 7 días después de pulsar "Cerrar sesión".
+    // Lo local se borra SIEMPRE y primero: el aviso al servidor es de mejor esfuerzo (sin esperar la respuesta, sin
+    // reintentar, y un fallo de red o un error no lo detiene), porque salir no puede depender de que haya conexión.
+    // Sin refresh token no hay llamada: es lo que pasa cuando la sesión ya se cerró (un refresh rechazado la borra).
+    // La ruta es /auth/, que el interceptor no toca (ni token ni reintentos), así que no hay bucle.
     // info: un aviso para la pantalla de login (p. ej. "se cerraron tus sesiones"). Viaja en el
     // estado de la navegación, no en la URL. severity: cómo se pinta (por defecto "success", que es
     // lo que cuentan los avisos de "todo bien"; "warn" para algo que el usuario debe atender, como
     // una empresa suspendida).
     logout(info?: string, severity: 'success' | 'warn' = 'success'): void {
+        const refreshToken = this.getRefreshToken();
         this.clearSession();
+        if (refreshToken) {
+            this.http.post<void>(`${this.authUrl}/logout`, { refreshToken }).subscribe({ error: () => undefined });
+        }
+
         // Solo viaja la severidad si no es la de siempre: el estado de un aviso normal no cambia.
         const state = severity === 'success' ? { info } : { info, infoSeverity: severity };
         this.router.navigate(['/auth/login'], info ? { state } : undefined);

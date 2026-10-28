@@ -175,9 +175,94 @@ describe('AuthService', () => {
             service.storeSession(tokens);
 
             service.logout('Tu empresa está suspendida.', 'warn');
+            httpMock.expectOne(`${authUrl}/logout`).flush(null, { status: 204, statusText: 'No Content' });
 
             expect(service.getToken()).toBeNull();
             expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], { state: { info: 'Tu empresa está suspendida.', infoSeverity: 'warn' } });
+        });
+
+        describe('tells the server (spec 013)', () => {
+            beforeEach(() => spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true));
+
+            it('sends the refresh token to POST /auth/logout', () => {
+                service.storeSession(tokens);
+
+                service.logout();
+
+                const request = httpMock.expectOne(`${authUrl}/logout`);
+                expect(request.request.method).toBe('POST');
+                expect(request.request.body).toEqual({ refreshToken: 'refresh-1' });
+                request.flush(null, { status: 204, statusText: 'No Content' });
+            });
+
+            it('clears everything locally BEFORE the server answers (it does not wait)', () => {
+                service.storeSession(tokens);
+                const session = TestBed.inject(CurrentSessionService);
+
+                service.logout();
+
+                // La petición sigue sin responder y la sesión local ya no existe.
+                expect(service.getToken()).toBeNull();
+                expect(service.getRefreshToken()).toBeNull();
+                expect(session.session()).toBeNull();
+                httpMock.expectOne(`${authUrl}/logout`);
+            });
+
+            it('still clears the session and navigates when there is no network', () => {
+                const navigate = TestBed.inject(Router).navigate as jasmine.Spy;
+                service.storeSession(tokens);
+
+                service.logout();
+                httpMock.expectOne(`${authUrl}/logout`).error(new ProgressEvent('error'));
+
+                expect(service.getToken()).toBeNull();
+                expect(service.getRefreshToken()).toBeNull();
+                expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], undefined);
+            });
+
+            it('still clears the session when the server answers an error', () => {
+                service.storeSession(tokens);
+
+                service.logout();
+                httpMock.expectOne(`${authUrl}/logout`).flush({ code: 'server.unexpected' }, { status: 500, statusText: 'Server Error' });
+
+                expect(service.getToken()).toBeNull();
+                expect(service.getRefreshToken()).toBeNull();
+            });
+
+            it('does not retry when the call fails', () => {
+                service.storeSession(tokens);
+
+                service.logout();
+                httpMock.expectOne(`${authUrl}/logout`).error(new ProgressEvent('error'));
+
+                httpMock.expectNone(`${authUrl}/logout`);
+            });
+
+            it('makes no call when there is no refresh token (the session was already closed)', () => {
+                service.logout();
+
+                httpMock.expectNone(`${authUrl}/logout`);
+            });
+
+            it('after a rejected refresh the session is already gone, so the forced logout makes no call', () => {
+                service.storeSession(tokens);
+                service.refresh().subscribe();
+                httpMock.expectOne(`${authUrl}/refresh`).flush(null, { status: 401, statusText: 'Unauthorized' });
+
+                service.logout();
+
+                httpMock.expectNone(`${authUrl}/logout`);
+            });
+
+            it('a second logout right after the first does not send the token again', () => {
+                service.storeSession(tokens);
+
+                service.logout();
+                service.logout();
+
+                httpMock.expectOne(`${authUrl}/logout`);
+            });
         });
 
         it('keeps the navigation state of a normal notice exactly as it was (no severity travels)', () => {
