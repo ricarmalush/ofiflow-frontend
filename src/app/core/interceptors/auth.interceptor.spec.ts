@@ -1,10 +1,10 @@
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
-import { AuthService } from '../services/auth';
+import { AuthService, SESSION_ENDED_MESSAGE } from '../services/auth';
 import { CurrentSessionService } from '../services/current-session';
 import { buildAccount } from '../testing/fake-account';
 import { buildSessionToken } from '../testing/fake-jwt';
@@ -66,14 +66,72 @@ describe('authInterceptor', () => {
         expect(body).toEqual([{ id: 1 }]);
     });
 
-    it('logs out when the refresh is rejected too', () => {
+    it('does not show any notice when the refresh works (an expired access token is routine)', () => {
         spyOn(authService, 'logout');
 
-        http.get(jobsUrl).subscribe({ error: () => undefined });
+        http.get(jobsUrl).subscribe();
         httpMock.expectOne(jobsUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
-        httpMock.expectOne(refreshUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+        httpMock.expectOne(refreshUrl).flush({ accessToken: newToken, refreshToken: 'refresh-2', expiresAt: '' });
+        httpMock.expectOne(accountUrl).flush(buildAccount());
+        httpMock.expectOne(jobsUrl).flush([]);
 
-        expect(authService.logout).toHaveBeenCalled();
+        expect(authService.logout).not.toHaveBeenCalled();
+    });
+
+    describe('when the session was closed (spec 015 of the API)', () => {
+        it('goes back to the login WITH a warning notice when the refresh is rejected too', () => {
+            spyOn(authService, 'logout');
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+            httpMock.expectOne(refreshUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+
+            expect(authService.logout).toHaveBeenCalledOnceWith(SESSION_ENDED_MESSAGE, 'warn');
+        });
+
+        it('hands the notice to the login in the navigation state (not in the URL), with the warning severity', () => {
+            const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+            httpMock.expectOne(refreshUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+
+            expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], { state: { info: 'Tu sesión se cerró. Vuelve a entrar.', infoSeverity: 'warn' } });
+            expect(authService.getToken()).toBeNull();
+            expect(authService.getRefreshToken()).toBeNull();
+        });
+
+        it('still hands the original 401 to whoever made the request', () => {
+            spyOn(authService, 'logout');
+            let status: number | undefined;
+
+            http.get(jobsUrl).subscribe({ error: (e) => (status = e.status) });
+            httpMock.expectOne(jobsUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+            httpMock.expectOne(refreshUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+
+            expect(status).toBe(401);
+        });
+
+        it('with no refresh token left it asks nothing and goes back to the login with the notice', () => {
+            spyOn(authService, 'logout');
+            sessionStorage.removeItem('ofiflow_refresh_token');
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush(null, { status: 401, statusText: 'Unauthorized' });
+
+            httpMock.expectNone(refreshUrl);
+            expect(authService.logout).toHaveBeenCalledOnceWith(SESSION_ENDED_MESSAGE, 'warn');
+        });
+
+        it('does not add the notice to a 403 (a role that cannot do something is not a closed session)', () => {
+            spyOn(authService, 'logout');
+
+            http.get(jobsUrl).subscribe({ error: () => undefined });
+            httpMock.expectOne(jobsUrl).flush({ code: 'auth.forbidden' }, { status: 403, statusText: 'Forbidden' });
+            httpMock.expectOne(accountUrl).flush(buildAccount());
+
+            expect(authService.logout).not.toHaveBeenCalled();
+        });
     });
 
     it('leaves the 401 of the login alone (a wrong password is a normal answer)', () => {

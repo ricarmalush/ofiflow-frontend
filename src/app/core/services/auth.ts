@@ -19,6 +19,9 @@ export const INVALID_CREDENTIALS_MESSAGE = 'Email o contraseña incorrectos.';
 export const INVALID_MFA_CODE_MESSAGE = 'El código no es válido o ha caducado.';
 export const ALL_SESSIONS_CLOSED_MESSAGE = 'Se cerraron todas tus sesiones. Vuelve a entrar.';
 
+// Al volver al login porque la API ya no reconoce la sesión (spec 015): se cerró en otro sitio, o caducó. Lo dice el interceptor.
+export const SESSION_ENDED_MESSAGE = 'Tu sesión se cerró. Vuelve a entrar.';
+
 // Guarda la sesión y habla con /auth/login, /auth/mfa/verify y /auth/refresh.
 //
 // sessionStorage y no localStorage: la sesión muere al cerrar la pestaña, así que un token

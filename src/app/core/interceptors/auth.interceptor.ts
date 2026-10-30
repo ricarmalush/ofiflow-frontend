@@ -5,7 +5,7 @@ import { environment } from '../../../environments/environment';
 import { ProblemDetails } from '../../shared/models/problem-details.model';
 import { FORBIDDEN_CODE, TENANT_SUSPENDED_CODE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
 import { AccountService } from '../services/account';
-import { AuthService } from '../services/auth';
+import { AuthService, SESSION_ENDED_MESSAGE } from '../services/auth';
 
 // Rutas anónimas de la API: no llevan token, y su 401 es una respuesta normal del flujo
 // (credenciales o código erróneos) que muestra la pantalla de login, no una sesión caducada.
@@ -62,12 +62,15 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
                 return throwError(() => error);
             }
 
-            // Access token caducado (dura 30 min): se cambia el refresh token por uno nuevo y se
-            // repite la petición una sola vez. Si el refresh falla, la sesión se acabó de verdad.
+            // Access token caducado (dura 30 min) o de una sesión cerrada (spec 015 de la API: cerrar una sesión, todas, cambiar el segundo
+            // factor o una baja dejan sin efecto su access token en la petición siguiente): se cambia el refresh token por uno nuevo y se
+            // repite la petición una sola vez. Si el refresh falla, la sesión se acabó de verdad. Se vuelve al login CON un aviso: sin él,
+            // quien tenía la pestaña abierta mientras su sesión se cerraba en otro sitio (o por otra persona con su cuenta) veía la pantalla
+            // de entrada sin saber por qué.
             return authService.refresh().pipe(
                 switchMap((refreshed) => {
                     if (!refreshed) {
-                        authService.logout();
+                        authService.logout(SESSION_ENDED_MESSAGE, 'warn');
                         return throwError(() => error);
                     }
                     return next(withToken(req, authService.getToken()));
