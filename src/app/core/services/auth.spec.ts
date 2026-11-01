@@ -366,4 +366,97 @@ describe('AuthService', () => {
             httpMock.expectNone(sessionsUrl);
         });
     });
+
+    describe('closeSession (spec 016)', () => {
+        const sessionId = '4d6f1f6a-8c1e-4f3b-9d6a-2b1c3d4e5f60';
+        const sessionUrl = `${environment.apiUrl}/account/sessions/${sessionId}`;
+        let navigate: jasmine.Spy;
+        let result: OperationResult | undefined;
+
+        beforeEach(() => {
+            navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+            result = undefined;
+            service.storeSession(tokens);
+        });
+
+        it('sends DELETE /account/sessions/{id} with no body (the account comes from the token)', () => {
+            service.closeSession(sessionId, false).subscribe();
+
+            const request = httpMock.expectOne(sessionUrl);
+            expect(request.request.method).toBe('DELETE');
+            expect(request.request.body).toBeNull();
+            request.flush(null, { status: 204, statusText: 'No Content' });
+        });
+
+        it('encodes the id so it can never add path segments or a query to the URL', () => {
+            service.closeSession('../me?x=1', false).subscribe();
+
+            const request = httpMock.expectOne((r) => r.method === 'DELETE');
+            expect(request.request.url).toBe(`${environment.apiUrl}/account/sessions/..%2Fme%3Fx%3D1`);
+            request.flush(null, { status: 204, statusText: 'No Content' });
+        });
+
+        it('closing ANOTHER session keeps this one exactly as it was', () => {
+            service.closeSession(sessionId, false).subscribe((r) => (result = r));
+            httpMock.expectOne(sessionUrl).flush(null, { status: 204, statusText: 'No Content' });
+
+            expect(result?.isSuccess).toBeTrue();
+            expect(service.getToken()).toBe(tokens.accessToken);
+            expect(service.getRefreshToken()).toBe('refresh-1');
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
+        it('closing THIS session clears the local one and goes to the login with the notice', () => {
+            const session = TestBed.inject(CurrentSessionService);
+
+            service.closeSession(sessionId, true).subscribe((r) => (result = r));
+            httpMock.expectOne(sessionUrl).flush(null, { status: 204, statusText: 'No Content' });
+
+            expect(result?.isSuccess).toBeTrue();
+            expect(service.getToken()).toBeNull();
+            expect(service.getRefreshToken()).toBeNull();
+            expect(session.session()).toBeNull();
+            expect(navigate).toHaveBeenCalledOnceWith(['/auth/login'], { state: { info: 'Se cerró esta sesión. Vuelve a entrar.' } });
+        });
+
+        it('does not touch the local session until the server confirms', () => {
+            service.closeSession(sessionId, true).subscribe();
+
+            expect(service.getToken()).toBe(tokens.accessToken);
+            expect(navigate).not.toHaveBeenCalled();
+            httpMock.expectOne(sessionUrl);
+        });
+
+        it('does not also call POST /auth/logout: the same request already revoked this tab\'s refresh token', () => {
+            service.closeSession(sessionId, true).subscribe();
+            httpMock.expectOne(sessionUrl).flush(null, { status: 204, statusText: 'No Content' });
+
+            httpMock.expectNone(`${authUrl}/logout`);
+        });
+
+        it('on the 404 (not found, not yours or already closed: the API does not say which) keeps the session even if it was "this" one', () => {
+            service.closeSession(sessionId, true).subscribe((r) => (result = r));
+            httpMock.expectOne(sessionUrl).flush({ code: 'session.not_found', detail: 'No se ha encontrado la sesión.' }, { status: 404, statusText: 'Not Found' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'No se ha encontrado la sesión.', code: 'session.not_found' }));
+            expect(service.getToken()).toBe(tokens.accessToken);
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
+        it('with no network keeps the session and reports it', () => {
+            service.closeSession(sessionId, true).subscribe((r) => (result = r));
+            httpMock.expectOne(sessionUrl).error(new ProgressEvent('error'));
+
+            expect(result?.isSuccess).toBeFalse();
+            expect(service.getToken()).toBe(tokens.accessToken);
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
+        it('shows the API text when the rate limit answers 429', () => {
+            service.closeSession(sessionId, false).subscribe((r) => (result = r));
+            httpMock.expectOne(sessionUrl).flush({ detail: 'Demasiadas peticiones.' }, { status: 429, statusText: 'Too Many Requests' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'Demasiadas peticiones.' }));
+        });
+    });
 });

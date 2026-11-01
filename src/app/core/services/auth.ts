@@ -18,6 +18,7 @@ const REFRESH_TOKEN_KEY = 'ofiflow_refresh_token';
 export const INVALID_CREDENTIALS_MESSAGE = 'Email o contraseña incorrectos.';
 export const INVALID_MFA_CODE_MESSAGE = 'El código no es válido o ha caducado.';
 export const ALL_SESSIONS_CLOSED_MESSAGE = 'Se cerraron todas tus sesiones. Vuelve a entrar.';
+export const THIS_SESSION_CLOSED_MESSAGE = 'Se cerró esta sesión. Vuelve a entrar.';
 
 // Al volver al login porque la API ya no reconoce la sesión (spec 015): se cerró en otro sitio, o caducó. Lo dice el interceptor.
 export const SESSION_ENDED_MESSAGE = 'Tu sesión se cerró. Vuelve a entrar.';
@@ -151,6 +152,22 @@ export class AuthService {
                 if (result.isSuccess) {
                     this.clearSession();
                     this.goToLogin(ALL_SESSIONS_CLOSED_MESSAGE, 'success');
+                }
+            })
+        );
+    }
+
+    // Cierra UNA sesión concreta de la cuenta (DELETE /account/sessions/{id}, spec 016 de la API): la de otro dispositivo
+    // o la de esta pestaña. Igual que closeAllSessions(), SÍ espera la respuesta y no toca nada local si falla.
+    // Solo si era la de ESTA pestaña (isCurrent) se borra lo local y se lleva al login: su refresh token ya está
+    // revocado por la misma petición, así que no se llama a /auth/logout. Si era otra, esta sesión sigue como estaba.
+    // El 404 de la API es el mismo para «no existe», «es de otra cuenta» y «ya estaba cerrada»: aquí llega como error normal.
+    closeSession(sessionId: string, isCurrent: boolean): Observable<OperationResult> {
+        return toOperationResult(this.http.delete<void>(`${environment.apiUrl}/account/sessions/${encodeURIComponent(sessionId)}`)).pipe(
+            tap((result) => {
+                if (result.isSuccess && isCurrent) {
+                    this.clearSession();
+                    this.goToLogin(THIS_SESSION_CLOSED_MESSAGE, 'success');
                 }
             })
         );

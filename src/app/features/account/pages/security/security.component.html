@@ -105,16 +105,56 @@
     }
 </div>
 
-@if (canCloseSessions()) {
+@if (showSessionsCard()) {
     <div class="card max-w-3xl">
         <div class="font-semibold text-xl mb-2">Sesiones</div>
-        <p class="text-muted-color mb-6">Cierra tu sesión en todos tus dispositivos a la vez, por ejemplo si perdiste uno o crees que alguien más tiene acceso. Tendrás que volver a entrar también aquí.</p>
+        @if (canListSessions()) {
+            <p class="text-muted-color mb-6">Estos son los dispositivos donde tu cuenta tiene la sesión abierta. Si alguno no lo reconoces, ciérralo. El navegador y la red los informa cada dispositivo y la red se muestra aproximada: sirven para reconocer tus sesiones, no como prueba de nada.</p>
+
+            @if (sessions(); as list) {
+                <ul class="list-none p-0 m-0 mb-6 flex flex-col gap-3" aria-label="Mis sesiones">
+                    @for (s of list; track s.id) {
+                        <li class="flex flex-wrap items-center justify-between gap-3 border border-surface rounded-border p-4">
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium">{{ s.device }}</span>
+                                    @if (s.current) {
+                                        <p-tag value="Esta sesión" severity="info" />
+                                    }
+                                </div>
+                                <span class="text-muted-color text-sm">Empezó el {{ s.startedAt | date: 'dd/MM/yyyy HH:mm' }} · Última actividad {{ s.lastActiveAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+                                @if (s.approximateIp) {
+                                    <span class="text-muted-color text-sm">Red aproximada: {{ s.approximateIp }}</span>
+                                }
+                            </div>
+                            @if (canCloseSessions()) {
+                                <p-button
+                                    [label]="s.current ? 'Cerrar esta sesión' : 'Cerrar'"
+                                    icon="pi pi-sign-out"
+                                    severity="danger"
+                                    [outlined]="true"
+                                    size="small"
+                                    [loading]="closingId() === s.id"
+                                    [disabled]="closingAny()"
+                                    (onClick)="closeSession(s)"
+                                />
+                            }
+                        </li>
+                    }
+                </ul>
+            } @else if (sessionsLoading()) {
+                <p class="text-muted-color mb-6">Cargando tus sesiones…</p>
+            }
+        }
 
         @if (sessionsError()) {
             <p-message severity="error" styleClass="mb-6">{{ sessionsError() }}</p-message>
         }
 
-        <p-button label="Cerrar todas mis sesiones" icon="pi pi-sign-out" severity="danger" [outlined]="true" [loading]="closingAll()" (onClick)="confirmCloseAllSessions()" />
+        @if (canCloseSessions()) {
+            <p class="text-muted-color mb-4">Cierra tu sesión en todos tus dispositivos a la vez, por ejemplo si perdiste uno o crees que alguien más tiene acceso. Tendrás que volver a entrar también aquí.</p>
+            <p-button label="Cerrar todas mis sesiones" icon="pi pi-sign-out" severity="danger" [outlined]="true" [loading]="closingAll()" [disabled]="closingId() !== null" (onClick)="confirmCloseAllSessions()" />
+        }
     </div>
 }
 

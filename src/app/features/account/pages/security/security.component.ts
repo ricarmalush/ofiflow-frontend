@@ -1,5 +1,5 @@
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -13,8 +13,10 @@ import { AuthService } from '../../../../core/services/auth';
 import { CurrentSessionService } from '../../../../core/services/current-session';
 import { qrDataUrl } from '../../../../core/utils/qr.util';
 import { MfaStatus } from '../../../../shared/models/mfa.model';
+import { SessionInfo } from '../../../../shared/models/session.model';
 import { OperationResult } from '../../../../shared/models/result.model';
 import { MfaService } from '../../services/mfa.service';
+import { SessionsService } from '../../services/sessions.service';
 
 // Qué está viendo la persona. Los pasos de activar van en orden: contraseña → escanear y
 // confirmar con un código → guardar los códigos de recuperación.
@@ -25,7 +27,7 @@ const SESSION_CLOSED_MESSAGE = 'Por seguridad se han cerrado todas tus sesiones.
 @Component({
     selector: 'app-security',
     standalone: true,
-    imports: [NgTemplateOutlet, ReactiveFormsModule, FormsModule, ButtonModule, InputTextModule, PasswordModule, MessageModule, TagModule, CheckboxModule],
+    imports: [DatePipe, NgTemplateOutlet, ReactiveFormsModule, FormsModule, ButtonModule, InputTextModule, PasswordModule, MessageModule, TagModule, CheckboxModule],
     templateUrl: './security.component.html'
 })
 export class SecurityComponent implements OnInit {
@@ -34,6 +36,7 @@ export class SecurityComponent implements OnInit {
     private messageService = inject(MessageService);
     private confirmationService = inject(ConfirmationService);
     private currentSession = inject(CurrentSessionService);
+    private sessionsService = inject(SessionsService);
     private fb = inject(FormBuilder);
 
     readonly view = signal<View>('status');
@@ -42,10 +45,25 @@ export class SecurityComponent implements OnInit {
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
 
-    // «Cerrar todas mis sesiones» (spec 014 de la API). Solo para pintar el botón: la API vuelve a comprobar el permiso.
+    // Mis sesiones (specs 014 y 016 de la API). Los permisos solo sirven para pintar: la API vuelve a comprobarlos.
+    // Ver la lista es Account.Read; cerrar una o todas es Account.CloseSessions. Son independientes: cada cosa se ofrece por su permiso.
+    readonly canListSessions = computed(() => this.currentSession.can('Account.Read'));
     readonly canCloseSessions = computed(() => this.currentSession.can('Account.CloseSessions'));
+    readonly showSessionsCard = computed(() => this.canListSessions() || this.canCloseSessions());
+    readonly sessions = signal<SessionInfo[] | null>(null);
+    readonly sessionsLoading = signal(false);
     readonly closingAll = signal(false);
+    // El Id de la sesión que se está cerrando (una a la vez, y tampoco mientras se cierran todas).
+    readonly closingId = signal<string | null>(null);
     readonly sessionsError = signal<string | null>(null);
+    readonly closingAny = computed(() => this.closingAll() || this.closingId() !== null);
+
+    constructor() {
+        // La lista se pide en cuanto hay permiso para verla (la cuenta puede cargarse después que la pantalla, o cambiar de rol).
+        effect(() => {
+            if (this.canListSessions()) untracked(() => this.loadSessions());
+        });
+    }
 
     // Secretos de un solo uso: solo en memoria, mientras dura el paso, y se borran al salir de él.
     readonly secret = signal<string | null>(null);
@@ -111,7 +129,7 @@ export class SecurityComponent implements OnInit {
 
     // Pide confirmación antes: es la única acción de esta pantalla que echa también a quien la pulsa, y no se deshace.
     confirmCloseAllSessions(): void {
-        if (this.closingAll()) return;
+        if (this.closingAny()) return;
         this.confirmationService.confirm({
             header: 'Cerrar todas mis sesiones',
             message: 'Se cerrarán tus sesiones en todos tus dispositivos, también en este, y tendrás que volver a entrar. ¿Continuar?',
@@ -131,6 +149,53 @@ export class SecurityComponent implements OnInit {
         this.authService.closeAllSessions().subscribe((result) => {
             this.closingAll.set(false);
             if (!result.isSuccess) this.sessionsError.set(result.message);
+        });
+    }
+
+    // Cerrar otra sesión no echa a nadie de aquí, así que no pide confirmación; cerrar ESTA sí, porque lleva al login.
+    closeSession(session: SessionInfo): void {
+        if (this.closingAny()) return;
+        if (!session.current) {
+            this.runCloseSession(session);
+            return;
+        }
+        this.confirmationService.confirm({
+            header: 'Cerrar esta sesión',
+            message: 'Se cerrará la sesión de este dispositivo y tendrás que volver a entrar. ¿Continuar?',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Cerrar esta sesión',
+            rejectLabel: 'Volver',
+            acceptButtonStyleClass: 'p-button-danger',
+            rejectButtonStyleClass: 'p-button-secondary p-button-text',
+            accept: () => this.runCloseSession(session)
+        });
+    }
+
+    // Si era otra sesión, se refresca la lista; si era esta, AuthService ya llevó al login. Si falla, nada cambia y se dice.
+    private runCloseSession(session: SessionInfo): void {
+        this.closingId.set(session.id);
+        this.sessionsError.set(null);
+        this.authService.closeSession(session.id, session.current).subscribe((result) => {
+            this.closingId.set(null);
+            if (!result.isSuccess) {
+                this.sessionsError.set(result.message);
+                // Un 404 significa que ya no estaba (la cerró otro dispositivo): la lista que se ve está desfasada.
+                this.loadSessions();
+            } else if (!session.current) {
+                this.loadSessions();
+            }
+        });
+    }
+
+    private loadSessions(): void {
+        this.sessionsLoading.set(true);
+        this.sessionsService.list().subscribe((result) => {
+            this.sessionsLoading.set(false);
+            if (result.isSuccess) {
+                this.sessions.set(result.data ?? []);
+            } else {
+                this.sessionsError.set(result.message);
+            }
         });
     }
 

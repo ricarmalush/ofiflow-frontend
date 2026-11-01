@@ -9,6 +9,7 @@ import { CurrentSessionService } from '../../../../core/services/current-session
 import { PERMISSIONS_OF, buildAccount } from '../../../../core/testing/fake-account';
 import { buildSessionToken } from '../../../../core/testing/fake-jwt';
 import { TenantRole } from '../../../../shared/models/auth.model';
+import { SessionInfo } from '../../../../shared/models/session.model';
 import { SecurityComponent } from './security.component';
 
 const mfaUrl = `${environment.apiUrl}/account/mfa`;
@@ -21,8 +22,9 @@ describe('SecurityComponent · cerrar todas mis sesiones (spec 014)', () => {
     let navigate: jasmine.Spy;
     let session: CurrentSessionService;
 
-    // Monta la pantalla con la cuenta indicada (null = la cuenta aún no se ha cargado) y responde al estado del MFA.
-    function open(permissions: string[] | null): HTMLElement {
+    // Monta la pantalla con la cuenta indicada (null = la cuenta aún no se ha cargado) y responde al estado del MFA
+    // y, si la cuenta puede verla, a la lista de sesiones (por defecto vacía).
+    function open(permissions: string[] | null, sessions: SessionInfo[] = []): HTMLElement {
         // AuthService restaura la sesión de sessionStorage al crearse (y la vacía si no hay): se crea ANTES de poner la cuenta.
         const auth = TestBed.inject(AuthService);
         auth.storeSession({ accessToken: buildSessionToken(), refreshToken: 'refresh-1', expiresAt: '2030-01-01T00:00:00Z' });
@@ -32,9 +34,13 @@ describe('SecurityComponent · cerrar todas mis sesiones (spec 014)', () => {
         fixture = TestBed.createComponent(SecurityComponent);
         fixture.detectChanges();
         httpMock.expectOne(mfaUrl).flush({ enabled: false, setupPending: false, recoveryCodesRemaining: 0 });
+        listRequests().forEach((r) => r.flush(sessions));
         fixture.detectChanges();
         return fixture.nativeElement as HTMLElement;
     }
+
+    // Las peticiones GET /account/sessions pendientes (la lista); el DELETE de cerrar una usa la misma URL y no cuenta.
+    const listRequests = () => httpMock.match((r) => r.url === sessionsUrl && r.method === 'GET');
 
     const closeButton = (host: HTMLElement) => Array.from(host.querySelectorAll('p-button')).find((b) => b.textContent?.includes('Cerrar todas mis sesiones'))?.querySelector('button') ?? null;
     const lastConfirmation = (): Confirmation => confirm.calls.mostRecent().args[0];
@@ -61,11 +67,12 @@ describe('SecurityComponent · cerrar todas mis sesiones (spec 014)', () => {
             });
         });
 
-        it('sin el permiso no hay botón ni la sección «Sesiones»', () => {
-            const host = open(['Account.Read', 'Mfa.Manage']);
+        it('sin ninguno de los dos permisos no hay botón, ni lista, ni la sección «Sesiones», ni se pide la lista', () => {
+            const host = open(['Mfa.Manage']);
 
             expect(closeButton(host)).toBeNull();
             expect(host.textContent).not.toContain('Sesiones');
+            httpMock.expectNone(sessionsUrl);
         });
 
         it('mientras la cuenta no se ha cargado no hay botón (ante la duda, la interfaz no ofrece nada)', () => {
@@ -87,7 +94,7 @@ describe('SecurityComponent · cerrar todas mis sesiones (spec 014)', () => {
             expect(closeButton(host)).toBeNull();
         });
 
-        it('el botón de las sesiones no depende de Mfa.Manage ni de Account.Read: solo de Account.CloseSessions', () => {
+        it('el botón «Cerrar todas» no depende de Mfa.Manage ni de Account.Read: solo de Account.CloseSessions', () => {
             const host = open(['Account.CloseSessions']);
 
             expect(closeButton(host)).not.toBeNull();
