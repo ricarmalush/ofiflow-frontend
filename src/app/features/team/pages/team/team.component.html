@@ -98,7 +98,20 @@
 }
 
 <p-dialog [(visible)]="inviteOpen" (onHide)="closeInvite()" header="Invitar al equipo" [modal]="true" [style]="{ width: '34rem' }" [breakpoints]="{ '640px': '95vw' }">
-    @if (!inviteLink()) {
+    @if (inviteSent(); as sent) {
+        <!-- Con correo configurado (spec 017) la API envía el enlace y quien invita no llega a conocerlo: aquí solo se confirma a quién. Todo va interpolado, nunca como HTML. -->
+        <div class="flex flex-col gap-4">
+            <p-message severity="success">
+                Hemos enviado la invitación a <strong>{{ sent.email }}</strong>. Recibirá un correo con un enlace para elegir su nombre y su contraseña.
+            </p-message>
+            <p class="text-muted-color m-0">
+                La invitación caduca el {{ sent.expiresAt | date: 'dd/MM/yyyy HH:mm' }}. Si no le llega, que mire la carpeta de spam; también puedes revocarla en la lista de pendientes y volver a invitar.
+            </p>
+            <div class="flex justify-end">
+                <p-button label="Hecho" (onClick)="closeInvite()" />
+            </div>
+        </div>
+    } @else if (!inviteLink()) {
         <form [formGroup]="inviteForm" (ngSubmit)="sendInvite()" class="flex flex-col gap-5">
             @if (inviteError()) {
                 <p-message severity="error">{{ inviteError() }}</p-message>
@@ -122,7 +135,7 @@
     } @else {
         <div class="flex flex-col gap-4">
             <p-message severity="warn">
-                Este enlace solo se muestra ahora. Cópialo y envíaselo a la persona por un canal de confianza. Quien lo tenga puede crear la cuenta, así que no lo publiques.
+                El correo no está configurado en este servidor, así que la invitación no se ha enviado. Este enlace solo se muestra ahora: cópialo y envíaselo a la persona por un canal de confianza. Quien lo tenga puede crear la cuenta, así que no lo publiques.
             </p-message>
             <p-inputgroup>
                 <input pInputText readonly [value]="inviteLink()" aria-label="Enlace de invitación" class="w-full" (focus)="$any($event.target).select()" />

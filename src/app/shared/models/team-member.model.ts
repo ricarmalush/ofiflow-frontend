@@ -20,11 +20,14 @@ export interface Invitation {
     createdAt: string;
 }
 
-// Espejo TS de InvitationCreatedDto. El token llega en claro UNA sola vez, al crearla.
+// Espejo TS de InvitationCreatedDto (spec 017). Hay dos formas, según el correo de la API:
+//  - con correo (emailSent: true): el enlace ya se envió a la persona y token es null; quien invita no lo conoce;
+//  - sin correo (emailSent: false): token trae el valor en claro UNA sola vez y quien invita se lo entrega por su canal.
 export interface InvitationCreated {
     id: string;
-    token: string;
+    token: string | null;
     expiresAt: string;
+    emailSent: boolean;
 }
 
 export const ROLE_LABELS: Readonly<Record<TenantRole, string>> = {

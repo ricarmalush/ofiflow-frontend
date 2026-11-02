@@ -29,15 +29,40 @@ describe('TeamService', () => {
         req.flush(null, { status: 204, statusText: 'No Content' });
     });
 
-    it('returns the one-time invitation token', () => {
+    it('returns the one-time invitation token when the API has no email configured', () => {
         let result: OperationResult<InvitationCreated> | undefined;
         service.invite('ana@empresa.es', 'Employee').subscribe((r) => (result = r));
 
         const req = httpMock.expectOne(`${environment.apiUrl}/invitations`);
         expect(req.request.body).toEqual({ email: 'ana@empresa.es', role: 4 });
-        req.flush({ id: 'inv-1', token: 'tok-abc', expiresAt: '2030-01-01T00:00:00Z' }, { status: 201, statusText: 'Created' });
+        req.flush({ id: 'inv-1', token: 'tok-abc', expiresAt: '2030-01-01T00:00:00Z', emailSent: false }, { status: 201, statusText: 'Created' });
 
         expect(result?.data?.token).toBe('tok-abc');
+        expect(result?.data?.emailSent).toBeFalse();
+    });
+
+    it('reads a sent-by-email invitation: no token, emailSent true (spec 017)', () => {
+        let result: OperationResult<InvitationCreated> | undefined;
+        service.invite('ana@empresa.es', 'Employee').subscribe((r) => (result = r));
+
+        httpMock.expectOne(`${environment.apiUrl}/invitations`).flush({ id: 'inv-2', token: null, expiresAt: '2030-01-01T00:00:00Z', emailSent: true }, { status: 201, statusText: 'Created' });
+
+        expect(result?.isSuccess).toBeTrue();
+        expect(result?.data?.token).toBeNull();
+        expect(result?.data?.emailSent).toBeTrue();
+    });
+
+    it('reports a 502 invitation.email_not_sent with the API text and its code, without throwing', () => {
+        let result: OperationResult<InvitationCreated> | undefined;
+        service.invite('ana@empresa.es', 'Employee').subscribe((r) => (result = r));
+
+        httpMock
+            .expectOne(`${environment.apiUrl}/invitations`)
+            .flush({ status: 502, detail: 'No se ha podido enviar el correo de la invitación.', code: 'invitation.email_not_sent' }, { status: 502, statusText: 'Bad Gateway' });
+
+        expect(result?.isSuccess).toBeFalse();
+        expect(result?.message).toBe('No se ha podido enviar el correo de la invitación.');
+        expect(result?.code).toBe('invitation.email_not_sent');
     });
 
     it('reports a hierarchy rejection (an Admin touching another Admin) without throwing', () => {

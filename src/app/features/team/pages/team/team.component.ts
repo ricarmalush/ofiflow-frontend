@@ -17,6 +17,8 @@ import { TenantRole } from '../../../../shared/models/auth.model';
 import { Invitation, MANAGEABLE_ROLES, ROLE_LABELS, TeamMember, canManage } from '../../../../shared/models/team-member.model';
 import { TeamService } from '../../services/team.service';
 
+export const INVITATION_WITHOUT_DELIVERY_MESSAGE = 'La invitación se creó, pero la respuesta no trae ni el enlace ni la confirmación del correo. Revócala en la lista de pendientes y vuelve a invitar.';
+
 @Component({
     selector: 'app-team',
     standalone: true,
@@ -44,11 +46,14 @@ export class TeamComponent implements OnInit {
         return (role ? MANAGEABLE_ROLES[role] : []).map((value) => ({ label: ROLE_LABELS[value], value }));
     });
 
-    // Diálogo de invitar. Tras crearla, el mismo diálogo enseña el enlace (una sola vez).
+    // Diálogo de invitar. Tras crearla hay dos finales, según el correo de la API (spec 017):
+    //  - con correo: el enlace ya salió por email y aquí solo se confirma a quién (inviteSent); no hay nada que copiar;
+    //  - sin correo: el mismo diálogo enseña el enlace, una sola vez (inviteLink), y quien invita se lo entrega por su canal.
     inviteOpen = false;
     readonly inviting = signal(false);
     readonly inviteError = signal<string | null>(null);
     readonly inviteLink = signal<string | null>(null);
+    readonly inviteSent = signal<{ email: string; expiresAt: string } | null>(null);
     readonly inviteForm = this.fb.nonNullable.group({
         email: ['', [Validators.required, Validators.email]],
         role: this.fb.nonNullable.control<TenantRole>('Technician', Validators.required)
@@ -110,6 +115,7 @@ export class TeamComponent implements OnInit {
         this.inviteForm.reset({ email: '', role: this.grantableRoles().at(-1)?.value ?? 'Employee' });
         this.inviteError.set(null);
         this.inviteLink.set(null);
+        this.inviteSent.set(null);
         this.inviteOpen = true;
     }
 
@@ -117,6 +123,7 @@ export class TeamComponent implements OnInit {
     closeInvite(): void {
         this.inviteOpen = false;
         this.inviteLink.set(null);
+        this.inviteSent.set(null);
     }
 
     sendInvite(): void {
@@ -125,15 +132,26 @@ export class TeamComponent implements OnInit {
             return;
         }
         const { email, role } = this.inviteForm.getRawValue();
+        const target = email.trim();
         this.inviting.set(true);
         this.inviteError.set(null);
-        this.teamService.invite(email.trim(), role).subscribe((result) => {
+        this.teamService.invite(target, role).subscribe((result) => {
             this.inviting.set(false);
+            // También cuando el correo no salió (502 invitation.email_not_sent): la API no crea nada, el formulario se queda
+            // como estaba y se puede reintentar. El texto de la API no dice el motivo del servidor de correo.
             if (!result.isSuccess || !result.data) {
                 this.inviteError.set(result.message);
                 return;
             }
-            this.inviteLink.set(buildInvitationLink(result.data.token));
+            const created = result.data;
+            if (created.emailSent) {
+                this.inviteSent.set({ email: target, expiresAt: created.expiresAt });
+            } else if (created.token) {
+                this.inviteLink.set(buildInvitationLink(created.token));
+            } else {
+                // La API promete una de las dos cosas. Si no llega ninguna, no se deja un diálogo en blanco ni se da por entregada.
+                this.inviteError.set(INVITATION_WITHOUT_DELIVERY_MESSAGE);
+            }
             this.loadInvitations();
         });
     }
