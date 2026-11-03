@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
@@ -15,7 +15,7 @@ import { AppFloatingConfigurator } from '../../layout/component/app.floatingconf
 @Component({
     selector: 'app-login',
     standalone: true,
-    imports: [ButtonModule, InputTextModule, PasswordModule, MessageModule, FormsModule, AppFloatingConfigurator],
+    imports: [ButtonModule, InputTextModule, PasswordModule, MessageModule, FormsModule, RouterLink, AppFloatingConfigurator],
     template: `
         <app-floating-configurator />
         <div class="bg-surface-50 dark:bg-surface-950 flex items-center justify-center min-h-screen min-w-screen overflow-hidden">
@@ -74,6 +74,10 @@ import { AppFloatingConfigurator } from '../../layout/component/app.floatingconf
                                 ></p-password>
 
                                 <p-button type="submit" label="Entrar" styleClass="w-full" [loading]="loading()" [disabled]="!email || !password"></p-button>
+
+                                <div class="text-center mt-6">
+                                    <a routerLink="/auth/forgot-password" class="text-primary font-medium" data-testid="forgot-password-link">¿Has olvidado tu contraseña?</a>
+                                </div>
                             </form>
                         } @else {
                             <form (ngSubmit)="submitCode()">

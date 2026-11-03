@@ -77,6 +77,19 @@ export class AuthService {
         return toOperationResult(this.http.post<void>(`${this.authUrl}/accept-invitation`, { token, name, password }));
     }
 
+    // «He olvidado mi contraseña» (spec 018 de la API). La API responde 202 sin cuerpo SIEMPRE que el email tenga forma válida: exista la cuenta o no, esté bloqueada, suspendida o
+    // el correo apagado. Por eso un éxito aquí NO significa que se haya enviado nada, y la pantalla no debe decir «te hemos enviado un correo» sino «si existe una cuenta...».
+    // Los únicos fallos que llegan son un email mal formado (400), el límite de la IP (429) y los de red.
+    forgotPassword(email: string): Observable<OperationResult> {
+        return toOperationResult(this.http.post<void>(`${this.authUrl}/forgot-password`, { email }));
+    }
+
+    // Elegir la contraseña nueva con el token del enlace del correo (spec 018). 204 si sirvió; no devuelve sesión (se entra por el login normal, y con el segundo
+    // factor si la cuenta lo tiene). Un token desconocido, caducado, usado o anulado dan el mismo 400 `password_reset.invalid`: la API no dice cuál fue.
+    resetPassword(token: string, newPassword: string): Observable<OperationResult> {
+        return toOperationResult(this.http.post<void>(`${this.authUrl}/reset-password`, { token, newPassword }));
+    }
+
     // Cambia el refresh token por un par nuevo. true si hay sesión nueva; false si no había
     // refresh token o la API lo rechazó (caducado, revocado), y entonces la sesión se borra.
     refresh(): Observable<boolean> {
