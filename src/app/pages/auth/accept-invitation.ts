@@ -6,6 +6,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { PasswordModule } from 'primeng/password';
 import { AuthService } from '../../core/services/auth';
+import { readFragmentToken } from '../../core/utils/fragment-token.util';
 import { AppFloatingConfigurator } from '../../layout/component/app.floatingconfigurator';
 
 // Límites de la API (AcceptInvitationCommandValidator: User.NameMaxLength y PasswordRules).
@@ -19,8 +20,7 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
 
 // Lee el token del fragmento: "#token=...". Devuelve null si no hay.
 export function readInvitationToken(hash: string): string | null {
-    const value = new URLSearchParams(hash.replace(/^#/, '')).get('token');
-    return value ? value : null;
+    return readFragmentToken(hash);
 }
 
 // Página pública a la que lleva el enlace de invitación. La persona elige su nombre y su

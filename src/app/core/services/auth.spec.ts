@@ -459,4 +459,93 @@ describe('AuthService', () => {
             expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'Demasiadas peticiones.' }));
         });
     });
+
+    describe('forgotPassword (spec 018)', () => {
+        let result: OperationResult | undefined;
+
+        beforeEach(() => (result = undefined));
+
+        it('sends POST /auth/forgot-password with only the email, and no session', () => {
+            service.forgotPassword('ana@empresa.com').subscribe((r) => (result = r));
+
+            const request = httpMock.expectOne(`${authUrl}/forgot-password`);
+            expect(request.request.method).toBe('POST');
+            expect(request.request.body).toEqual({ email: 'ana@empresa.com' });
+            request.flush(null, { status: 202, statusText: 'Accepted' });
+
+            expect(result?.isSuccess).toBeTrue();
+            expect(service.getToken()).toBeNull();
+        });
+
+        it('turns a malformed-email 400 into a failure with the API text', () => {
+            service.forgotPassword('sin-arroba').subscribe((r) => (result = r));
+
+            httpMock
+                .expectOne(`${authUrl}/forgot-password`)
+                .flush({ code: 'validation.failed', detail: 'El email no es válido.' }, { status: 400, statusText: 'Bad Request' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'El email no es válido.', code: 'validation.failed' }));
+        });
+
+        it('turns the IP rate limit into a failure', () => {
+            service.forgotPassword('ana@empresa.com').subscribe((r) => (result = r));
+
+            httpMock
+                .expectOne(`${authUrl}/forgot-password`)
+                .flush({ code: 'rate_limit.exceeded', detail: 'Demasiadas peticiones.' }, { status: 429, statusText: 'Too Many Requests' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'Demasiadas peticiones.' }));
+        });
+    });
+
+    describe('resetPassword (spec 018)', () => {
+        let result: OperationResult | undefined;
+
+        beforeEach(() => (result = undefined));
+
+        it('sends POST /auth/reset-password with the token and the new password, and opens no session', () => {
+            service.resetPassword('tok-1', 'Clave-nueva-2026!').subscribe((r) => (result = r));
+
+            const request = httpMock.expectOne(`${authUrl}/reset-password`);
+            expect(request.request.method).toBe('POST');
+            expect(request.request.body).toEqual({ token: 'tok-1', newPassword: 'Clave-nueva-2026!' });
+            request.flush(null, { status: 204, statusText: 'No Content' });
+
+            expect(result?.isSuccess).toBeTrue();
+            // La API no devuelve sesión: se entra por el login normal.
+            expect(service.getToken()).toBeNull();
+            expect(service.getRefreshToken()).toBeNull();
+        });
+
+        it('keeps the stable code of a token that does not serve, so the page can tell it apart', () => {
+            service.resetPassword('tok-1', 'Clave-nueva-2026!').subscribe((r) => (result = r));
+
+            httpMock
+                .expectOne(`${authUrl}/reset-password`)
+                .flush({ code: 'password_reset.invalid', detail: 'El enlace no es válido.' }, { status: 400, statusText: 'Bad Request' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'El enlace no es válido.', code: 'password_reset.invalid' }));
+        });
+
+        it('keeps the field errors of a validation failure', () => {
+            service.resetPassword('tok-1', 'corta').subscribe((r) => (result = r));
+
+            httpMock.expectOne(`${authUrl}/reset-password`).flush(
+                { code: 'validation.failed', detail: 'Hay datos no válidos.', errors: [{ field: 'newPassword', code: 'length', message: 'Entre 8 y 128.' }] },
+                { status: 400, statusText: 'Bad Request' }
+            );
+
+            expect(result?.fieldErrors?.[0].field).toBe('newPassword');
+        });
+
+        it('does not touch an existing session', () => {
+            service.storeSession(tokens);
+
+            service.resetPassword('tok-1', 'Clave-nueva-2026!').subscribe();
+            httpMock.expectOne(`${authUrl}/reset-password`).flush(null, { status: 204, statusText: 'No Content' });
+
+            // El restablecimiento es de una cuenta anónima; si esta pestaña tenía sesión, la limpia el 401 del interceptor cuando el servidor la cierre, no este método.
+            expect(service.getToken()).toBe(tokens.accessToken);
+        });
+    });
 });
