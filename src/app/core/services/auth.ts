@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, catchError, finalize, map, of, shareReplay, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { AuthTokens, LoginOutcome, MfaChallenge } from '../../shared/models/auth.model';
+import { AuthTokens, LoginOutcome, MfaChallenge, RegistrationRequest } from '../../shared/models/auth.model';
 import { OperationResult } from '../../shared/models/result.model';
 import { extractErrorMessage, toOperationResult } from '../utils/http-result.util';
 import { AccountService } from './account';
@@ -70,11 +70,25 @@ export class AuthService {
         );
     }
 
-    // La persona invitada elige su nombre y su contraseña; la API no devuelve sesión, así que
+    // La persona invitada elige su nombre y su contraseña y acepta las condiciones de uso (spec 021 D8); la API no devuelve sesión, así que
     // después entra por el login normal. Un token caducado, revocado, usado o inventado dan el
     // mismo error (invitation.invalid): la API no dice cuál de los cuatro fue.
-    acceptInvitation(token: string, name: string, password: string): Observable<OperationResult> {
-        return toOperationResult(this.http.post<void>(`${this.authUrl}/accept-invitation`, { token, name, password }));
+    acceptInvitation(token: string, name: string, password: string, acceptedTermsVersion: string): Observable<OperationResult> {
+        return toOperationResult(this.http.post<void>(`${this.authUrl}/accept-invitation`, { token, name, password, acceptedTermsVersion }));
+    }
+
+    // Pedir crear una cuenta (spec 021 de la API). La API responde 202 sin cuerpo SIEMPRE que los datos tengan forma válida: el email sea nuevo o ya tenga cuenta, se pase el
+    // límite del email, el correo esté apagado o las condiciones sin configurar. Por eso un éxito aquí NO significa que se haya enviado nada ni que no exista ya la cuenta, y la
+    // pantalla no debe afirmarlo. NO crea ninguna cuenta ni abre sesión: la cuenta nace al abrir el enlace del correo. Los únicos fallos que llegan son un dato mal formado o
+    // una versión de las condiciones que no es la vigente (400, con el error en su campo), el límite de la IP (429) y los de red.
+    requestRegistration(request: RegistrationRequest): Observable<OperationResult> {
+        return toOperationResult(this.http.post<void>(`${this.authUrl}/registration`, request));
+    }
+
+    // Completar el registro con el token del enlace del correo y elegir la contraseña (spec 021). 204 si sirvió: AQUÍ nacen la empresa y el usuario. No devuelve sesión (se entra por
+    // el login normal). Un token desconocido, caducado, usado, sustituido o cuyo email ya tiene cuenta dan el mismo 400 `registration.invalid`: la API no dice cuál fue.
+    completeRegistration(token: string, newPassword: string): Observable<OperationResult> {
+        return toOperationResult(this.http.post<void>(`${this.authUrl}/registration/complete`, { token, newPassword }));
     }
 
     // «He olvidado mi contraseña» (spec 018 de la API). La API responde 202 sin cuerpo SIEMPRE que el email tenga forma válida: exista la cuenta o no, esté bloqueada, suspendida o

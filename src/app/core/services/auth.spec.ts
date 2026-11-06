@@ -548,4 +548,118 @@ describe('AuthService', () => {
             expect(service.getToken()).toBe(tokens.accessToken);
         });
     });
+
+    describe('requestRegistration (spec 021)', () => {
+        const request = { companyName: 'Fontanería Demo SL', userName: 'Ana Pérez', email: 'ana@empresa.com', acceptedTermsVersion: '2026-11' };
+        let result: OperationResult | undefined;
+
+        beforeEach(() => (result = undefined));
+
+        it('sends POST /auth/registration with the four fields and NO password, and opens no session', () => {
+            service.requestRegistration(request).subscribe((r) => (result = r));
+
+            const req = httpMock.expectOne(`${authUrl}/registration`);
+            expect(req.request.method).toBe('POST');
+            expect(req.request.body).toEqual(request);
+            expect(Object.keys(req.request.body as object).sort()).toEqual(['acceptedTermsVersion', 'companyName', 'email', 'userName']);
+            req.flush(null, { status: 202, statusText: 'Accepted' });
+
+            expect(result?.isSuccess).toBeTrue();
+            // La API no abre sesión ni crea ninguna cuenta: se entra por el login normal, después de abrir el enlace del correo.
+            expect(service.getToken()).toBeNull();
+            expect(service.getRefreshToken()).toBeNull();
+        });
+
+        it('keeps the field errors of a 400 (for example the terms version that is no longer the current one)', () => {
+            service.requestRegistration({ ...request, acceptedTermsVersion: '2020-01' }).subscribe((r) => (result = r));
+
+            httpMock.expectOne(`${authUrl}/registration`).flush(
+                { code: 'validation.failed', detail: 'Hay datos no válidos.', errors: [{ field: 'AcceptedTermsVersion', code: 'registration.terms_not_accepted', message: 'Hay que aceptar las condiciones vigentes.' }] },
+                { status: 400, statusText: 'Bad Request' }
+            );
+
+            expect(result?.isSuccess).toBeFalse();
+            expect(result?.fieldErrors?.[0]).toEqual(jasmine.objectContaining({ field: 'AcceptedTermsVersion', code: 'registration.terms_not_accepted' }));
+        });
+
+        it('turns the IP rate limit into a failure', () => {
+            service.requestRegistration(request).subscribe((r) => (result = r));
+
+            httpMock.expectOne(`${authUrl}/registration`).flush({ code: 'rate_limit.exceeded', detail: 'Demasiadas peticiones.' }, { status: 429, statusText: 'Too Many Requests' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'Demasiadas peticiones.', code: 'rate_limit.exceeded' }));
+        });
+
+        it('does not touch an existing session', () => {
+            service.storeSession(tokens);
+
+            service.requestRegistration(request).subscribe();
+            httpMock.expectOne(`${authUrl}/registration`).flush(null, { status: 202, statusText: 'Accepted' });
+
+            expect(service.getToken()).toBe(tokens.accessToken);
+        });
+    });
+
+    describe('completeRegistration (spec 021)', () => {
+        let result: OperationResult | undefined;
+
+        beforeEach(() => (result = undefined));
+
+        it('sends POST /auth/registration/complete with the token and the password, and opens no session', () => {
+            service.completeRegistration('tok-1', 'Clave-elegida-2026!').subscribe((r) => (result = r));
+
+            const req = httpMock.expectOne(`${authUrl}/registration/complete`);
+            expect(req.request.method).toBe('POST');
+            expect(req.request.body).toEqual({ token: 'tok-1', newPassword: 'Clave-elegida-2026!' });
+            req.flush(null, { status: 204, statusText: 'No Content' });
+
+            expect(result?.isSuccess).toBeTrue();
+            // La cuenta nace aquí, pero la API no devuelve sesión: se entra por el login normal.
+            expect(service.getToken()).toBeNull();
+            expect(service.getRefreshToken()).toBeNull();
+        });
+
+        it('keeps the stable code of a link that does not serve, so the page can tell it apart', () => {
+            service.completeRegistration('tok-1', 'Clave-elegida-2026!').subscribe((r) => (result = r));
+
+            httpMock.expectOne(`${authUrl}/registration/complete`).flush({ code: 'registration.invalid', detail: 'El enlace no es válido.' }, { status: 400, statusText: 'Bad Request' });
+
+            expect(result).toEqual(jasmine.objectContaining({ isSuccess: false, message: 'El enlace no es válido.', code: 'registration.invalid' }));
+        });
+
+        it('keeps the field errors of a validation failure', () => {
+            service.completeRegistration('tok-1', 'corta').subscribe((r) => (result = r));
+
+            httpMock.expectOne(`${authUrl}/registration/complete`).flush(
+                { code: 'validation.failed', detail: 'Hay datos no válidos.', errors: [{ field: 'NewPassword', code: 'length', message: 'Entre 8 y 128.' }] },
+                { status: 400, statusText: 'Bad Request' }
+            );
+
+            expect(result?.fieldErrors?.[0].field).toBe('NewPassword');
+        });
+
+        it('does not touch an existing session', () => {
+            service.storeSession(tokens);
+
+            service.completeRegistration('tok-1', 'Clave-elegida-2026!').subscribe();
+            httpMock.expectOne(`${authUrl}/registration/complete`).flush(null, { status: 204, statusText: 'No Content' });
+
+            expect(service.getToken()).toBe(tokens.accessToken);
+        });
+    });
+
+    describe('acceptInvitation (spec 021 D8)', () => {
+        it('sends the terms version the person accepted, together with the name and the password', () => {
+            let result: OperationResult | undefined;
+            service.acceptInvitation('tok-1', 'Ana Pérez', 'Clave-elegida-2026!', '2026-11').subscribe((r) => (result = r));
+
+            const req = httpMock.expectOne(`${authUrl}/accept-invitation`);
+            expect(req.request.method).toBe('POST');
+            expect(req.request.body).toEqual({ token: 'tok-1', name: 'Ana Pérez', password: 'Clave-elegida-2026!', acceptedTermsVersion: '2026-11' });
+            req.flush(null, { status: 204, statusText: 'No Content' });
+
+            expect(result?.isSuccess).toBeTrue();
+            expect(service.getToken()).toBeNull();
+        });
+    });
 });
