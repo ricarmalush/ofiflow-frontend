@@ -46,11 +46,21 @@ export const JOB_LIMITS = {
     descriptionMaxLength: 2000
 } as const;
 
-// Transiciones de Job (Start, Complete, Cancel en el Domain). Solo deciden qué botón se ofrece;
-// si el estado cambió entre tanto, la API responde 400 con su mensaje y la pantalla lo muestra.
-export const canStart = (status: JobStatus) => status === 'New';
+// Transiciones de Job (Schedule, Unschedule, Start, Complete, Cancel en el Domain). Solo deciden qué botón se
+// ofrece; si el estado cambió entre tanto, la API responde 400 con su mensaje y la pantalla lo muestra.
+// Un trabajo se inicia desde New o desde Scheduled (spec 020 R8): muchos servicios no se planifican.
+export const canStart = (status: JobStatus) => status === 'New' || status === 'Scheduled';
 export const canComplete = (status: JobStatus) => status === 'InProgress';
 export const canCancel = (status: JobStatus) => status !== 'Completed' && status !== 'Cancelled';
+// Programar es para un trabajo nuevo o ya programado (reprogramar); quitarlo de la agenda, solo si está programado.
+export const canSchedule = (status: JobStatus) => status === 'New' || status === 'Scheduled';
+export const canUnschedule = (status: JobStatus) => status === 'Scheduled';
+
+// Límites de la programación (spec 020 R6): la duración es un número entero de minutos, de 1 a 1440 (un día).
+export const SCHEDULE_LIMITS = {
+    minMinutes: 1,
+    maxMinutes: 1440
+} as const;
 
 export interface Job {
     id: string;
@@ -68,4 +78,10 @@ export interface JobInput {
     title: string;
     description: string | null;
     priority: JobPriority;
+}
+
+// «Vencido»: un trabajo que sigue PROGRAMADO cuando su hora ya pasó, es decir, que nadie ha empezado. Uno en curso no lo está
+// (se está haciendo, aunque tarde) y uno completado o cancelado ya no espera nada.
+export function isOverdue(job: Pick<Job, 'status' | 'scheduledDate'>, now: Date): boolean {
+    return job.status === 'Scheduled' && !!job.scheduledDate && new Date(job.scheduledDate).getTime() < now.getTime();
 }

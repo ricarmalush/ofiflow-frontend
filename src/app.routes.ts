@@ -43,6 +43,11 @@ export const appRoutes: Routes = [
                 loadComponent: () => import('./app/features/jobs/pages/job-form/job-form.component').then((c) => c.JobFormComponent)
             },
             {
+                path: 'agenda',
+                canActivate: [permissionGuard('Jobs.Read')],
+                loadComponent: () => import('./app/features/agenda/pages/agenda/agenda.component').then((c) => c.AgendaComponent)
+            },
+            {
                 path: 'team',
                 canActivate: [permissionGuard('Users.Read')],
                 loadComponent: () => import('./app/features/team/pages/team/team.component').then((c) => c.TeamComponent)

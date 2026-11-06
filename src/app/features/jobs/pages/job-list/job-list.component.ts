@@ -12,9 +12,11 @@ import { Table, TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToolbarModule } from 'primeng/toolbar';
 import { forkJoin, of } from 'rxjs';
+import { CLOCK } from '../../../../core/services/clock';
 import { CurrentSessionService } from '../../../../core/services/current-session';
+import { formatDateTime } from '../../../../core/utils/local-datetime.util';
 import { escapeHtml } from '../../../../core/utils/escape-html.util';
-import { Job, JOB_PRIORITY_LABELS, JOB_STATUS_LABELS, JobPriority, JobStatus, TagSeverity, canCancel, canComplete, canStart, jobPrioritySeverity, jobStatusSeverity } from '../../../../shared/models/job.model';
+import { Job, JOB_PRIORITY_LABELS, JOB_STATUS_LABELS, JobPriority, JobStatus, TagSeverity, canCancel, canComplete, canStart, isOverdue, jobPrioritySeverity, jobStatusSeverity } from '../../../../shared/models/job.model';
 import { CustomerService } from '../../../customers/services/customer.service';
 import { TeamService } from '../../../team/services/team.service';
 import { JobService, JobTransition } from '../../services/job.service';
@@ -23,6 +25,9 @@ import { JobService, JobTransition } from '../../services/job.service';
 interface JobRow extends Job {
     customerName: string;
     assigneeName: string;
+    // La fecha programada en la hora del navegador («10/11/2026 09:00»), o «—». Y si ya pasó sin empezar, «Vencido» (spec 020 F4, F6).
+    scheduledLabel: string;
+    overdue: boolean;
 }
 
 const TRANSITION_TEXT: Record<JobTransition, { done: string; failed: string }> = {
@@ -44,6 +49,7 @@ export class JobListComponent implements OnInit {
     private messageService = inject(MessageService);
     private confirmationService = inject(ConfirmationService);
     private session = inject(CurrentSessionService);
+    private clock = inject(CLOCK);
 
     private readonly jobs = signal<Job[]>([]);
     private readonly customerNames = signal(new Map<string, string>());
@@ -74,12 +80,15 @@ export class JobListComponent implements OnInit {
         const status = this.statusFilter();
         const me = this.myMembershipId();
         const onlyMine = this.onlyMine();
+        const now = this.clock();
         return this.jobs()
             .filter((job) => !status || job.status === status)
             .filter((job) => !onlyMine || (!!me && job.assignedTenantUserId === me))
             .map((job) => ({
                 ...job,
                 customerName: customers.get(job.customerId) ?? '—',
+                scheduledLabel: formatDateTime(job.scheduledDate),
+                overdue: isOverdue(job, now),
                 assigneeName: !job.assignedTenantUserId ? 'Sin asignar' : me && job.assignedTenantUserId === me ? 'Tú' : (members.get(job.assignedTenantUserId) ?? 'Asignado')
             }));
     });

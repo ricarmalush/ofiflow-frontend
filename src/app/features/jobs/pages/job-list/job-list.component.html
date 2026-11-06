@@ -56,6 +56,7 @@
                 <th pSortableColumn="status">Estado <p-sortIcon field="status" /></th>
                 <th pSortableColumn="priority">Prioridad <p-sortIcon field="priority" /></th>
                 <th>Asignado a</th>
+                <th pSortableColumn="scheduledDate">Programado <p-sortIcon field="scheduledDate" /></th>
                 <th class="w-48"></th>
             </tr>
         </ng-template>
@@ -67,6 +68,12 @@
                 <td><p-tag [value]="statusLabel(job.status)" [severity]="statusSeverity(job.status)" /></td>
                 <td><p-tag [value]="priorityLabel(job.priority)" [severity]="prioritySeverity(job.priority)" /></td>
                 <td>{{ job.assigneeName }}</td>
+                <td>
+                    <span class="whitespace-nowrap">{{ job.scheduledLabel }}</span>
+                    @if (job.overdue) {
+                        <p-tag value="Vencido" severity="warn" styleClass="ml-2" />
+                    }
+                </td>
                 <td class="text-right whitespace-nowrap">
                     @if (canExecute() && canStart(job.status)) {
                         <p-button icon="pi pi-play" [rounded]="true" [text]="true" ariaLabel="Iniciar"[disabled]="busyJobId() === job.id" (onClick)="run(job, 'start')" />
@@ -86,7 +93,7 @@
 
         <ng-template #emptymessage>
             <tr>
-                <td colspan="6" class="text-center text-muted-color py-8">No hay trabajos.</td>
+                <td colspan="7" class="text-center text-muted-color py-8">No hay trabajos.</td>
             </tr>
         </ng-template>
     </p-table>

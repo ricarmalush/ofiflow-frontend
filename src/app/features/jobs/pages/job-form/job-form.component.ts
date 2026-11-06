@@ -10,8 +10,9 @@ import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { Observable, forkJoin, of } from 'rxjs';
 import { CurrentSessionService } from '../../../../core/services/current-session';
+import { localInputToUtcIso, utcIsoToLocalInput } from '../../../../core/utils/local-datetime.util';
 import { Customer } from '../../../../shared/models/customer.model';
-import { JOB_LIMITS, JOB_PRIORITY_LABELS, JOB_STATUS_LABELS, JobInput, JobPriority, JobStatus } from '../../../../shared/models/job.model';
+import { JOB_LIMITS, JOB_PRIORITY_LABELS, JOB_STATUS_LABELS, JobInput, JobPriority, JobStatus, SCHEDULE_LIMITS, canSchedule, canUnschedule } from '../../../../shared/models/job.model';
 import { FieldError } from '../../../../shared/models/problem-details.model';
 import { OperationResult } from '../../../../shared/models/result.model';
 import { TeamMember } from '../../../../shared/models/team-member.model';
@@ -45,6 +46,10 @@ export class JobFormComponent implements OnInit {
     // Asignar exige Jobs.Assign y, para elegir a quién, poder ver el equipo (Users.Read).
     readonly canAssign = computed(() => this.session.can('Jobs.Assign') && this.session.can('Users.Read'));
 
+    // Programar exige Jobs.Schedule (spec 020 D4). Ver la agenda es Jobs.Read; mover un trabajo en ella, no.
+    readonly canScheduleJobs = computed(() => this.session.can('Jobs.Schedule'));
+    readonly scheduleLimits = SCHEDULE_LIMITS;
+
     readonly jobId = signal<string | null>(null);
     readonly status = signal<JobStatus | null>(null);
     readonly customers = signal<Customer[]>([]);
@@ -56,6 +61,28 @@ export class JobFormComponent implements OnInit {
 
     assigneeId: string | null = null;
     private savedAssigneeId: string | null = null;
+
+    // Programación (spec 020 F5). La fecha es la hora de pared del navegador (<input type=datetime-local>); se convierte a UTC al enviar.
+    scheduleAt = '';
+    scheduleMinutes: number | null = null;
+    readonly scheduling = signal(false);
+    readonly scheduleError = signal<string | null>(null);
+    readonly scheduleDateError = signal<string | null>(null);
+    readonly scheduleMinutesError = signal<string | null>(null);
+
+    // Solo se programa un trabajo nuevo o ya programado; en otro estado la sección se ve desactivada, y dice por qué.
+    readonly scheduleLocked = computed(() => {
+        const status = this.status();
+        return status === null || !canSchedule(status);
+    });
+    readonly scheduleLockedReason = computed(() => {
+        const status = this.status();
+        return status !== null && !canSchedule(status) ? `No se puede programar un trabajo ${JOB_STATUS_LABELS[status].toLowerCase()}.` : null;
+    });
+    readonly canRemoveFromAgenda = computed(() => {
+        const status = this.status();
+        return status !== null && canUnschedule(status);
+    });
 
     readonly form = this.fb.nonNullable.group({
         customerId: ['', [Validators.required]],
@@ -92,6 +119,8 @@ export class JobFormComponent implements OnInit {
                 this.status.set(j.status);
                 this.form.patchValue({ customerId: j.customerId, title: j.title, description: j.description ?? '', priority: j.priority });
                 this.assigneeId = this.savedAssigneeId = j.assignedTenantUserId;
+                this.scheduleAt = utcIsoToLocalInput(j.scheduledDate);
+                this.scheduleMinutes = j.estimatedDurationMinutes;
             }
         });
     }
@@ -149,6 +178,64 @@ export class JobFormComponent implements OnInit {
         });
     }
 
+    schedule(): void {
+        const id = this.jobId();
+        if (!id || this.scheduling() || this.scheduleLocked()) {
+            return;
+        }
+
+        this.scheduleError.set(null);
+        this.scheduleDateError.set(null);
+        this.scheduleMinutesError.set(null);
+
+        const scheduledDateUtc = localInputToUtcIso(this.scheduleAt);
+        if (!scheduledDateUtc) {
+            this.scheduleDateError.set('Indica la fecha y la hora.');
+            return;
+        }
+
+        const minutes = this.scheduleMinutes;
+        if (minutes !== null && (!Number.isInteger(minutes) || minutes < SCHEDULE_LIMITS.minMinutes || minutes > SCHEDULE_LIMITS.maxMinutes)) {
+            this.scheduleMinutesError.set(`La duración son minutos enteros, de ${SCHEDULE_LIMITS.minMinutes} a ${SCHEDULE_LIMITS.maxMinutes}.`);
+            return;
+        }
+
+        const wasScheduled = this.canRemoveFromAgenda();
+        this.scheduling.set(true);
+        this.jobService.schedule(id, scheduledDateUtc, minutes).subscribe((result) => {
+            this.scheduling.set(false);
+            if (!result.isSuccess) {
+                // Lo que la persona escribió se conserva: solo se enseña por qué la API no lo aceptó.
+                this.scheduleError.set(result.message);
+                this.applyScheduleFieldErrors(result.fieldErrors);
+                return;
+            }
+            this.messageService.add({ severity: 'success', summary: wasScheduled ? 'Trabajo reprogramado' : 'Trabajo programado', detail: this.form.controls.title.value });
+            this.reloadJob(id);
+        });
+    }
+
+    unschedule(): void {
+        const id = this.jobId();
+        if (!id || this.scheduling() || !this.canRemoveFromAgenda()) {
+            return;
+        }
+
+        this.scheduleError.set(null);
+        this.scheduleDateError.set(null);
+        this.scheduleMinutesError.set(null);
+        this.scheduling.set(true);
+        this.jobService.unschedule(id).subscribe((result) => {
+            this.scheduling.set(false);
+            if (!result.isSuccess) {
+                this.scheduleError.set(result.message);
+                return;
+            }
+            this.messageService.add({ severity: 'success', summary: 'Trabajo quitado de la agenda', detail: this.form.controls.title.value });
+            this.reloadJob(id);
+        });
+    }
+
     hasError(field: FieldName): boolean {
         const control = this.form.controls[field];
         return control.invalid && (control.touched || !!control.errors?.['api']);
@@ -160,6 +247,30 @@ export class JobFormComponent implements OnInit {
         if (errors['required']) return 'Obligatorio.';
         if (errors['maxlength']) return `Máximo ${errors['maxlength'].requiredLength} caracteres.`;
         return '';
+    }
+
+    // Tras programar o desprogramar se vuelve a pedir el trabajo, en vez de suponer cómo quedó: la pantalla enseña lo que la API guardó.
+    private reloadJob(id: string): void {
+        this.jobService.get(id).subscribe((result) => {
+            if (!result.isSuccess || !result.data) {
+                this.scheduleError.set(result.message);
+                return;
+            }
+            const job = result.data;
+            this.status.set(job.status);
+            this.scheduleAt = utcIsoToLocalInput(job.scheduledDate);
+            this.scheduleMinutes = job.estimatedDurationMinutes;
+        });
+    }
+
+    private applyScheduleFieldErrors(fieldErrors: FieldError[] | undefined): void {
+        for (const error of fieldErrors ?? []) {
+            if (error.field === 'ScheduledDate') {
+                this.scheduleDateError.set(error.message);
+            } else if (error.field === 'EstimatedDurationMinutes') {
+                this.scheduleMinutesError.set(error.message);
+            }
+        }
     }
 
     private applyFieldErrors(fieldErrors: FieldError[] | undefined): void {

@@ -59,6 +59,73 @@
         </div>
     </form>
 
+    @if (jobId() && canScheduleJobs()) {
+        <div class="border-t border-surface mt-8 pt-6 max-w-2xl" data-testid="schedule-section">
+            <div class="font-semibold text-lg mb-4">Programación</div>
+
+            @if (scheduleLockedReason()) {
+                <p class="text-muted-color mt-0 mb-4" data-testid="schedule-locked">{{ scheduleLockedReason() }}</p>
+            }
+            @if (scheduleError()) {
+                <p-message severity="error" styleClass="mb-4">{{ scheduleError() }}</p-message>
+            }
+
+            <div class="flex flex-wrap gap-4 items-start">
+                <div class="flex flex-col gap-2">
+                    <label for="scheduledAt" class="font-medium">Fecha y hora</label>
+                    <input
+                        pInputText
+                        id="scheduledAt"
+                        type="datetime-local"
+                        [(ngModel)]="scheduleAt"
+                        [ngModelOptions]="{ standalone: true }"
+                        [disabled]="scheduleLocked() || scheduling()"
+                        [invalid]="!!scheduleDateError()"
+                    />
+                    @if (scheduleDateError()) {
+                        <small class="text-red-500">{{ scheduleDateError() }}</small>
+                    }
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label for="duration" class="font-medium">Duración (minutos)</label>
+                    <input
+                        pInputText
+                        id="duration"
+                        type="number"
+                        inputmode="numeric"
+                        step="1"
+                        [attr.min]="scheduleLimits.minMinutes"
+                        [attr.max]="scheduleLimits.maxMinutes"
+                        class="w-40"
+                        [(ngModel)]="scheduleMinutes"
+                        [ngModelOptions]="{ standalone: true }"
+                        [disabled]="scheduleLocked() || scheduling()"
+                        [invalid]="!!scheduleMinutesError()"
+                    />
+                    @if (scheduleMinutesError()) {
+                        <small class="text-red-500">{{ scheduleMinutesError() }}</small>
+                    }
+                </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2 mt-4">
+                <p-button
+                    type="button"
+                    [label]="canRemoveFromAgenda() ? 'Reprogramar' : 'Programar'"
+                    icon="pi pi-calendar"
+                    [loading]="scheduling()"
+                    [disabled]="scheduleLocked()"
+                    data-testid="schedule-button"
+                    (onClick)="schedule()"
+                />
+                @if (canRemoveFromAgenda()) {
+                    <p-button type="button" label="Quitar de la agenda" icon="pi pi-calendar-times" severity="secondary" [outlined]="true" [disabled]="scheduling()" data-testid="unschedule-button" (onClick)="unschedule()" />
+                }
+            </div>
+        </div>
+    }
+
     @if (jobId() && canAssign()) {
         <div class="border-t border-surface mt-8 pt-6 max-w-2xl">
             <div class="font-semibold text-lg mb-4">Asignación</div>
