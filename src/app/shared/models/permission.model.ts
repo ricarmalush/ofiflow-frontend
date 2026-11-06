@@ -14,6 +14,7 @@ export type Permission =
     | 'Jobs.Read'
     | 'Jobs.Write'
     | 'Jobs.Assign'
+    | 'Jobs.Schedule'
     | 'Jobs.Cancel'
     | 'Jobs.Execute'
     | 'Users.Read'

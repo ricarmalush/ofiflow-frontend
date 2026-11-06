@@ -36,7 +36,8 @@ export class AppMenu {
                 label: 'Gestión',
                 items: [
                     ...(can('Customers.Read') ? [{ label: 'Clientes', icon: 'pi pi-fw pi-users', routerLink: ['/customers'] }] : []),
-                    ...(can('Jobs.Read') ? [{ label: 'Trabajos', icon: 'pi pi-fw pi-briefcase', routerLink: ['/jobs'] }] : [])
+                    ...(can('Jobs.Read') ? [{ label: 'Trabajos', icon: 'pi pi-fw pi-briefcase', routerLink: ['/jobs'] }] : []),
+                    ...(can('Jobs.Read') ? [{ label: 'Agenda', icon: 'pi pi-fw pi-calendar', routerLink: ['/agenda'] }] : [])
                 ]
             },
             {

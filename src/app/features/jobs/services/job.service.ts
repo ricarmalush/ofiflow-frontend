@@ -41,6 +41,22 @@ export class JobService {
         return toOperationResult(this.http.post<void>(`${this.jobUrl(id)}/${transition}`, {}));
     }
 
+    // La agenda: los trabajos con fecha dentro de [from, to) (spec 020). Los dos extremos son instantes UTC con la «Z» (toISOString): sin «+»
+    // en la URL, que llegaría como un espacio. La API acota el rango a 42 días.
+    agenda(from: string, to: string): Observable<OperationResult<Job[]>> {
+        return toOperationResult(this.http.get<Job[]>(`${this.url}/agenda`, { params: { from, to } }));
+    }
+
+    // Programar o reprogramar: la fecha va como instante UTC con la «Z» y SUSTITUYE la programación entera (sin duración, se borra la anterior).
+    schedule(id: string, scheduledDateUtc: string, estimatedDurationMinutes: number | null): Observable<OperationResult> {
+        return toOperationResult(this.http.put<void>(`${this.jobUrl(id)}/schedule`, { scheduledDate: scheduledDateUtc, estimatedDurationMinutes }));
+    }
+
+    // Quita el trabajo de la agenda: vuelve a «Nuevo», sin fecha ni duración.
+    unschedule(id: string): Observable<OperationResult> {
+        return toOperationResult(this.http.delete<void>(`${this.jobUrl(id)}/schedule`));
+    }
+
     assign(id: string, tenantUserId: string): Observable<OperationResult> {
         return toOperationResult(this.http.post<void>(`${this.jobUrl(id)}/assign`, { tenantUserId }));
     }

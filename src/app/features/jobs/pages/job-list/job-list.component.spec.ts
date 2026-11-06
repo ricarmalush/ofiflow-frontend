@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { ConfirmationService, MessageService } from 'primeng/api';
+import { CLOCK } from '../../../../core/services/clock';
 import { environment } from '../../../../../environments/environment';
 import { CurrentSessionService } from '../../../../core/services/current-session';
 import { buildAccount } from '../../../../core/testing/fake-account';
@@ -122,5 +123,104 @@ describe('JobListComponent · my jobs', () => {
 
         expect(mineButton(host)).toBeUndefined();
         expect(titles(host).filter((title) => title && !title.startsWith('No hay'))).toEqual([]);
+    });
+});
+
+// La columna «Programado» y el «Iniciar» de un trabajo programado (spec 020 F4 y F6).
+describe('JobListComponent · schedule column', () => {
+    let httpMock: HttpTestingController;
+    let harness: RouterTestingHarness;
+    const NOW = new Date(2026, 10, 11, 10, 0);
+    const local = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).toISOString();
+
+    async function open(role: TenantRole, jobs: Job[]): Promise<HTMLElement> {
+        const session = TestBed.inject(CurrentSessionService);
+        session.establish(buildSessionToken());
+        session.setAccount(buildAccount({ role, membershipId: ME }));
+
+        harness = await RouterTestingHarness.create();
+        await harness.navigateByUrl('/jobs', JobListComponent);
+        httpMock.expectOne(jobsUrl).flush(jobs);
+        httpMock.expectOne(customersUrl).flush([{ id: 'c1', type: 'Person', name: 'Marta', email: null, phone: null, address: null, notes: null }]);
+        httpMock.match(usersUrl).forEach((request) => request.flush([]));
+        harness.detectChanges();
+        return harness.routeNativeElement as HTMLElement;
+    }
+
+    const withDate = (id: string, title: string, status: JobStatus, scheduledDate: string | null): Job => ({ ...job(id, title, status, null), scheduledDate });
+    const row = (host: HTMLElement, title: string) => Array.from(host.querySelectorAll('tbody tr')).find((tr) => tr.querySelector('td')?.textContent?.trim() === title) as HTMLElement;
+    const scheduledCell = (host: HTMLElement, title: string) => row(host, title).querySelector('td:nth-child(6)') as HTMLElement;
+    const labels = (host: HTMLElement, title: string) => Array.from(row(host, title).querySelectorAll('button')).map((button) => button.getAttribute('aria-label'));
+
+    beforeEach(() => {
+        TestBed.configureTestingModule({
+            providers: [
+                provideRouter([{ path: 'jobs', component: JobListComponent }]),
+                provideHttpClient(),
+                provideHttpClientTesting(),
+                MessageService,
+                ConfirmationService,
+                { provide: CLOCK, useValue: () => NOW }
+            ]
+        });
+        httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    afterEach(() => httpMock.verify());
+
+    it('shows the scheduled date in the browser time, day/month/year and 24-hour time', async () => {
+        const host = await open('Manager', [withDate('j1', 'Con fecha', 'Scheduled', local(12, 9, 5))]);
+
+        expect(scheduledCell(host, 'Con fecha').textContent).toContain('12/11/2026 09:05');
+    });
+
+    it('shows a dash when there is no date', async () => {
+        const host = await open('Manager', [withDate('j1', 'Sin fecha', 'New', null)]);
+
+        expect(scheduledCell(host, 'Sin fecha').textContent?.trim()).toBe('—');
+    });
+
+    it('marks "Vencido" only a scheduled job whose time has passed', async () => {
+        const host = await open('Manager', [
+            withDate('j1', 'Vencido', 'Scheduled', local(10, 9)),
+            withDate('j2', 'Futuro', 'Scheduled', local(12, 9)),
+            withDate('j3', 'En curso', 'InProgress', local(10, 9)),
+            withDate('j4', 'Hecho', 'Completed', local(10, 9))
+        ]);
+
+        const overdue = ['Vencido', 'Futuro', 'En curso', 'Hecho'].filter((title) => scheduledCell(host, title).textContent?.includes('Vencido'));
+        expect(overdue).toEqual(['Vencido']);
+    });
+
+    it('offers "Iniciar" for a scheduled job as well as for a new one, and not for one in progress', async () => {
+        const host = await open('Technician', [withDate('j1', 'Nuevo', 'New', null), withDate('j2', 'Programado', 'Scheduled', local(12, 9)), withDate('j3', 'En curso', 'InProgress', local(10, 9))]);
+
+        expect(labels(host, 'Nuevo')).toContain('Iniciar');
+        expect(labels(host, 'Programado')).toContain('Iniciar');
+        expect(labels(host, 'En curso')).not.toContain('Iniciar');
+        expect(labels(host, 'En curso')).toContain('Completar');
+    });
+
+    it('starting a scheduled job calls its start action and shows what the API stored', async () => {
+        const host = await open('Technician', [withDate('j1', 'Programado', 'Scheduled', local(12, 9))]);
+
+        (row(host, 'Programado').querySelector('button[aria-label="Iniciar"]') as HTMLButtonElement).click();
+        const start = httpMock.expectOne(`${jobsUrl}/j1/start`);
+        expect(start.request.method).toBe('POST');
+        start.flush(null, { status: 204, statusText: 'No Content' });
+        httpMock.expectOne(`${jobsUrl}/j1`).flush(withDate('j1', 'Programado', 'InProgress', local(12, 9)));
+        harness.detectChanges();
+
+        expect(labels(host, 'Programado')).not.toContain('Iniciar');
+        expect(labels(host, 'Programado')).toContain('Completar');
+        expect(scheduledCell(host, 'Programado').textContent).toContain('12/11/2026 09:00'); // conserva la fecha
+    });
+
+    it('the empty-list message spans the new column too', async () => {
+        const host = await open('Manager', []);
+
+        const cell = host.querySelector('tbody td[colspan]') as HTMLElement;
+        expect(cell.getAttribute('colspan')).toBe('7');
+        expect(host.querySelectorAll('thead th').length).toBe(7);
     });
 });
