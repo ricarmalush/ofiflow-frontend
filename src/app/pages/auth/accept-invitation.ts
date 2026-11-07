@@ -5,8 +5,10 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { PasswordModule } from 'primeng/password';
+import { TERMS_VERSION } from '../../core/constants/legal';
 import { AuthService } from '../../core/services/auth';
 import { readFragmentToken } from '../../core/utils/fragment-token.util';
+import { TermsCheckbox } from '../../shared/components/terms-checkbox';
 import { AppFloatingConfigurator } from '../../layout/component/app.floatingconfigurator';
 
 // Límites de la API (AcceptInvitationCommandValidator: User.NameMaxLength y PasswordRules).
@@ -28,7 +30,7 @@ export function readInvitationToken(hash: string): string | null {
 @Component({
     selector: 'app-accept-invitation',
     standalone: true,
-    imports: [ReactiveFormsModule, RouterModule, ButtonModule, InputTextModule, PasswordModule, MessageModule, AppFloatingConfigurator],
+    imports: [ReactiveFormsModule, RouterModule, ButtonModule, InputTextModule, PasswordModule, MessageModule, TermsCheckbox, AppFloatingConfigurator],
     template: `
         <app-floating-configurator />
         <div class="bg-surface-50 dark:bg-surface-950 flex items-center justify-center min-h-screen min-w-screen overflow-hidden">
@@ -60,6 +62,7 @@ export function readInvitationToken(hash: string): string | null {
                                     <small class="text-red-500">Las contraseñas no coinciden.</small>
                                 }
                             </div>
+                            <app-terms-checkbox [control]="form.controls.acceptTerms" />
                             <p-button type="submit" label="Crear mi cuenta" styleClass="w-full" [loading]="saving()" [disabled]="form.invalid" />
                         </form>
                     }
@@ -85,7 +88,9 @@ export class AcceptInvitation implements OnInit {
         {
             name: ['', [Validators.required, Validators.maxLength(NAME_MAX_LENGTH)]],
             password: ['', [Validators.required, Validators.minLength(PASSWORD_MIN_LENGTH), Validators.maxLength(PASSWORD_MAX_LENGTH)]],
-            confirm: ['', [Validators.required]]
+            confirm: ['', [Validators.required]],
+            // Spec 021 D8: toda persona que crea una cuenta acepta las condiciones, también quien llega por invitación.
+            acceptTerms: [false, [Validators.requiredTrue]]
         },
         { validators: passwordsMatch }
     );
@@ -106,10 +111,11 @@ export class AcceptInvitation implements OnInit {
         const { name, password } = this.form.getRawValue();
         this.saving.set(true);
         this.error.set(null);
-        this.authService.acceptInvitation(this.token, name.trim(), password).subscribe((result) => {
+        this.authService.acceptInvitation(this.token, name.trim(), password, TERMS_VERSION).subscribe((result) => {
             this.saving.set(false);
             if (!result.isSuccess) {
-                this.error.set(result.message);
+                // Un 400 de campo (por ejemplo, las condiciones que ya no son las vigentes) trae el texto útil en el error del campo, no en el general («Hay datos no válidos»).
+                this.error.set(result.fieldErrors?.length ? result.fieldErrors.map((e) => e.message).join(' ') : result.message);
                 return;
             }
             this.token = null;

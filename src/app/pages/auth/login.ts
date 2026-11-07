@@ -78,6 +78,10 @@ import { AppFloatingConfigurator } from '../../layout/component/app.floatingconf
                                 <div class="text-center mt-6">
                                     <a routerLink="/auth/forgot-password" class="text-primary font-medium" data-testid="forgot-password-link">¿Has olvidado tu contraseña?</a>
                                 </div>
+                                <div class="text-center mt-4">
+                                    <span class="text-muted-color">¿No tienes cuenta? </span>
+                                    <a routerLink="/auth/register" class="text-primary font-medium" data-testid="register-link">Crea una</a>
+                                </div>
                             </form>
                         } @else {
                             <form (ngSubmit)="submitCode()">

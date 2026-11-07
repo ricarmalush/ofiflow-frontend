@@ -17,5 +17,13 @@ export interface MfaChallenge {
 // Lo que el AuthService devuelve a la pantalla de login, con los tres casos explícitos.
 export type LoginOutcome = { kind: 'authenticated' } | { kind: 'mfa-required'; challenge: string; expiresAt: string } | { kind: 'failed'; message: string };
 
+// Lo que se envía para pedir crear una cuenta (spec 021): POST /auth/registration. No lleva contraseña: se elige al completar con el enlace del correo.
+export interface RegistrationRequest {
+    companyName: string;
+    userName: string;
+    email: string;
+    acceptedTermsVersion: string;
+}
+
 // Espejo TS de TenantRole (OfiFlow.Domain.Tenancy). Viaja en el claim "role" del JWT.
 export type TenantRole = 'Owner' | 'Admin' | 'Manager' | 'Technician' | 'Employee';
