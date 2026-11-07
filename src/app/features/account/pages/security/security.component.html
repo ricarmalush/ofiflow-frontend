@@ -2,6 +2,10 @@
     <div class="font-semibold text-xl mb-2">Segundo factor (MFA)</div>
     <p class="text-muted-color mb-6">Además de la contraseña, al entrar se te pedirá un código de una app de autenticación (Google Authenticator, Microsoft Authenticator, Aegis…).</p>
 
+    @if (mustEnroll()) {
+        <p-message severity="warn" styleClass="mb-6" data-testid="enrollment-banner">Tu rol exige el segundo factor. Actívalo para poder usar OfiFlow: hasta entonces solo puedes estar en esta pantalla.</p-message>
+    }
+
     @if (error()) {
         <p-message severity="error" styleClass="mb-6">{{ error() }}</p-message>
     }
@@ -27,7 +31,11 @@
                 <div class="flex flex-wrap gap-2">
                     @if (s.enabled) {
                         <p-button label="Generar códigos nuevos" icon="pi pi-refresh" severity="secondary" (onClick)="go('regenerate')" />
-                        <p-button label="Desactivar" icon="pi pi-lock-open" severity="danger" [outlined]="true" (onClick)="go('disable')" />
+                        @if (!secondFactorRequired()) {
+                            <p-button label="Desactivar" icon="pi pi-lock-open" severity="danger" [outlined]="true" (onClick)="go('disable')" />
+                        } @else {
+                            <span class="text-muted-color self-center" data-testid="cannot-disable">Tu rol exige el segundo factor, así que no se puede desactivar.</span>
+                        }
                     } @else {
                         <p-button label="Activar" icon="pi pi-shield" (onClick)="go('setup-password')" />
                     }

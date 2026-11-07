@@ -1,9 +1,9 @@
-import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { environment } from '../../../environments/environment';
-import { TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
+import { MFA_ENROLLMENT_REQUIRED_CODE, SECURITY_ROUTE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
 import { AuthService, SESSION_ENDED_MESSAGE } from '../services/auth';
 import { CurrentSessionService } from '../services/current-session';
 import { buildAccount } from '../testing/fake-account';
@@ -233,5 +233,152 @@ describe('authInterceptor', () => {
             httpMock.expectNone(accountUrl);
             expect(authService.logout).toHaveBeenCalled();
         });
+    });
+});
+
+describe('authInterceptor · segundo factor obligatorio (spec 022)', () => {
+    let http: HttpClient;
+    let httpMock: HttpTestingController;
+    let authService: AuthService;
+    let router: Router;
+    let navigate: jasmine.Spy;
+    const jobsUrl = `${environment.apiUrl}/jobs`;
+    const accountUrl = `${environment.apiUrl}/account/me`;
+    const refreshUrl = `${environment.apiUrl}/auth/refresh`;
+    const enrollmentRequired = { type: 'about:blank', title: 'Forbidden', status: 403, code: MFA_ENROLLMENT_REQUIRED_CODE, detail: 'Tu rol exige el segundo factor. Actívalo para continuar.' };
+    const mustEnroll = () => buildAccount({ role: 'Admin', secondFactorEnrollmentRequired: true, secondFactorRequired: true });
+
+    beforeEach(() => {
+        sessionStorage.clear();
+        TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(withInterceptors([authInterceptor])), provideHttpClientTesting()] });
+        http = TestBed.inject(HttpClient);
+        httpMock = TestBed.inject(HttpTestingController);
+        authService = TestBed.inject(AuthService);
+        router = TestBed.inject(Router);
+        navigate = spyOn(router, 'navigateByUrl').and.resolveTo(true);
+        authService.storeSession({ accessToken: buildSessionToken(), refreshToken: 'refresh-1', expiresAt: '' });
+    });
+
+    afterEach(() => {
+        httpMock.verify();
+        sessionStorage.clear();
+    });
+
+    it('asks again who I am and, if the account says it must enrol the factor, takes the person to the security screen', () => {
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(mustEnroll());
+
+        expect(navigate).toHaveBeenCalledOnceWith(SECURITY_ROUTE);
+    });
+
+    it('does NOT close the session, does not refresh it and does not retry the request (it would answer 403 again)', () => {
+        spyOn(authService, 'logout');
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(mustEnroll());
+
+        expect(authService.logout).not.toHaveBeenCalled();
+        httpMock.expectNone(refreshUrl);
+        httpMock.expectNone(jobsUrl);
+    });
+
+    it('still hands the 403 to whoever made the request (they show the API text)', () => {
+        let received: HttpErrorResponse | undefined;
+        http.get(jobsUrl).subscribe({ error: (e) => (received = e) });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(mustEnroll());
+
+        expect(received?.status).toBe(403);
+        expect((received?.error as { code: string }).code).toBe(MFA_ENROLLMENT_REQUIRED_CODE);
+    });
+
+    it('does not navigate if the fresh account says it does NOT have to enrol (the 403 was stale: do not trap anyone)', () => {
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(buildAccount({ role: 'Admin', secondFactorEnrollmentRequired: false }));
+
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('does not move anyone on the strength of an OLD account when the fresh one could not be checked (the next navigation meets the guard anyway)', () => {
+        TestBed.inject(CurrentSessionService).setAccount(mustEnroll()); // la cuenta de antes dice «debe activarlo»
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(null, { status: 500, statusText: 'Server Error' });
+
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('does not navigate if the account could not be loaded', () => {
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(null, { status: 500, statusText: 'Server Error' });
+
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('does not navigate when it is already on the security screen (no loop)', () => {
+        spyOnProperty(router, 'url', 'get').and.returnValue(SECURITY_ROUTE);
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(mustEnroll());
+
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('does not loop when the 403 is the one of the account request itself', () => {
+        http.get(accountUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(accountUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+
+        httpMock.expectNone(accountUrl);
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('several 403s at once ask for the account only once (the request is shared) and navigate once', () => {
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+        http.get(`${environment.apiUrl}/customers`).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(`${environment.apiUrl}/customers`).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(mustEnroll());
+
+        expect(navigate).toHaveBeenCalled();
+        navigate.calls.allArgs().forEach((args) => expect(args).toEqual([SECURITY_ROUTE]));
+    });
+
+    it('is decided by the code, not by the 403 alone: another 403 code does not ask for the account', () => {
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush({ ...enrollmentRequired, code: 'something.else' }, { status: 403, statusText: 'Forbidden' });
+
+        httpMock.expectNone(accountUrl);
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('is not mixed up with auth.forbidden: that one is "your role cannot", this one is "enrol and you can"', () => {
+        http.get(jobsUrl).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(jobsUrl).flush({ ...enrollmentRequired, code: 'auth.forbidden' }, { status: 403, statusText: 'Forbidden' });
+        httpMock.expectOne(accountUrl).flush(buildAccount({ role: 'Technician' }));
+
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('a 403 with the code on an anonymous auth route is left alone (those never carry the token nor this logic)', () => {
+        http.post(`${environment.apiUrl}/auth/login`, {}).subscribe({ error: () => undefined });
+
+        httpMock.expectOne(`${environment.apiUrl}/auth/login`).flush(enrollmentRequired, { status: 403, statusText: 'Forbidden' });
+
+        httpMock.expectNone(accountUrl);
+        expect(navigate).not.toHaveBeenCalled();
     });
 });

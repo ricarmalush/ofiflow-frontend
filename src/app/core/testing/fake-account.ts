@@ -26,6 +26,9 @@ export function buildAccount(overrides: Partial<CurrentAccount> = {}): CurrentAc
         tenantName: 'Fontanería Demo',
         role,
         permissions: PERMISSIONS_OF[role] ?? [],
+        // Neutros a propósito: la regla de qué roles lo exigen la dice la API, no este fichero. Cada test que la necesita lo indica.
+        secondFactorEnrollmentRequired: false,
+        secondFactorRequired: false,
         ...overrides
     };
 }

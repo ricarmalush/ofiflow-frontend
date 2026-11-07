@@ -47,8 +47,12 @@ export class SecurityComponent implements OnInit {
 
     // Mis sesiones (specs 014 y 016 de la API). Los permisos solo sirven para pintar: la API vuelve a comprobarlos.
     // Ver la lista es Account.Read; cerrar una o todas es Account.CloseSessions. Son independientes: cada cosa se ofrece por su permiso.
-    readonly canListSessions = computed(() => this.currentSession.can('Account.Read'));
-    readonly canCloseSessions = computed(() => this.currentSession.can('Account.CloseSessions'));
+    // Quien debe activar el segundo factor (spec 022) no puede listar sesiones: la API se lo deniega, así que no se ofrece ni se pide.
+    readonly mustEnroll = this.currentSession.mustEnrollSecondFactor;
+    // El rol exige el factor (lo tenga activo o no): no se ofrece «Desactivar». Lo dice la API (me.secondFactorRequired); aquí no se copia qué roles lo exigen.
+    readonly secondFactorRequired = this.currentSession.secondFactorRequired;
+    readonly canListSessions = computed(() => this.currentSession.can('Account.Read') && !this.mustEnroll());
+    readonly canCloseSessions = computed(() => this.currentSession.can('Account.CloseSessions') && !this.mustEnroll());
     readonly showSessionsCard = computed(() => this.canListSessions() || this.canCloseSessions());
     readonly sessions = signal<SessionInfo[] | null>(null);
     readonly sessionsLoading = signal(false);
@@ -82,9 +86,17 @@ export class SecurityComponent implements OnInit {
 
     ngOnInit(): void {
         this.loadStatus();
+        // Quien debe activar el factor llega DIRECTAMENTE al asistente (spec 022 D9): sin pasar por el estado y un botón más.
+        if (this.mustEnroll()) {
+            this.go('setup-password');
+        }
     }
 
     go(view: View): void {
+        // Un rol que exige el factor no puede desactivarlo (la API lo rechaza con mfa.required_for_role): ni se abre ese paso.
+        if (view === 'disable' && this.secondFactorRequired()) {
+            return;
+        }
         this.error.set(null);
         this.passwordForm.reset();
         this.codeForm.reset();
@@ -116,7 +128,7 @@ export class SecurityComponent implements OnInit {
     }
 
     disable(): void {
-        if (this.passwordAndCodeForm.invalid || this.busy()) return;
+        if (this.secondFactorRequired() || this.passwordAndCodeForm.invalid || this.busy()) return;
         const { password, code } = this.passwordAndCodeForm.getRawValue();
         this.run(this.mfaService.disable(password, code.trim()), () => this.authService.logout(SESSION_CLOSED_MESSAGE));
     }

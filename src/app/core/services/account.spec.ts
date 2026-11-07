@@ -15,7 +15,9 @@ const technician: CurrentAccount = {
     tenantId: '22222222-2222-2222-2222-222222222222',
     tenantName: 'Fontanería Demo',
     role: 'Technician',
-    permissions: ['Account.Read', 'Customers.Read', 'Jobs.Execute', 'Jobs.Read', 'Mfa.Manage']
+    permissions: ['Account.Read', 'Customers.Read', 'Jobs.Execute', 'Jobs.Read', 'Mfa.Manage'],
+    secondFactorEnrollmentRequired: false,
+    secondFactorRequired: false
 };
 
 describe('AccountService', () => {

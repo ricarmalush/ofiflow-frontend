@@ -4,6 +4,7 @@ import { AgendaComponent } from './app/features/agenda/pages/agenda/agenda.compo
 import { CurrentSessionService } from './app/core/services/current-session';
 import { buildAccount } from './app/core/testing/fake-account';
 import { buildSessionToken } from './app/core/testing/fake-jwt';
+import { secondFactorGuard } from './app/core/guards/second-factor.guard';
 import { appRoutes } from './app.routes';
 
 // La ruta de la agenda (spec 020 F1): existe una sola vez, carga la pantalla y exige Jobs.Read. El guard es solo interfaz (la API vuelve a
@@ -55,5 +56,43 @@ describe('app routes · agenda', () => {
         TestBed.inject(CurrentSessionService).establish(buildSessionToken({ role: 'Owner' }));
 
         expect(canActivate()).toBeInstanceOf(UrlTree);
+    });
+});
+
+// La zona privada y el segundo factor obligatorio (spec 022): el guardián va en la ruta del layout y se aplica a TODAS las hijas.
+describe('app routes · segundo factor obligatorio', () => {
+    const layout = () => appRoutes.find((route) => route.path === '' && route.children) as Route;
+    const security = () => (layout().children ?? []).find((route) => route.path === 'account/security') as Route;
+
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([])] }));
+
+    it('the logged-in layout applies the second-factor guard to every child route (canActivateChild), after authGuard', () => {
+        expect(layout().canActivate?.length).toBe(1);
+        expect(layout().canActivateChild).toEqual([secondFactorGuard]);
+    });
+
+    it('the security screen is a child of that layout (so the guard lets it through, not locks it)', () => {
+        expect(security()).toBeDefined();
+        expect(layout().children?.filter((route) => route.path === 'account/security').length).toBe(1);
+    });
+
+    it('end to end with the real route table: whoever must enrol can reach the security screen and nothing else', () => {
+        const session = TestBed.inject(CurrentSessionService);
+        session.establish(buildSessionToken());
+        session.setAccount(buildAccount({ role: 'Owner', secondFactorEnrollmentRequired: true, secondFactorRequired: true }));
+        const guard = layout().canActivateChild![0] as (r: ActivatedRouteSnapshot, s: RouterStateSnapshot) => unknown;
+        const run = (url: string) => TestBed.runInInjectionContext(() => guard({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot));
+
+        const children = (layout().children ?? []).filter((route) => route.path !== undefined);
+        for (const route of children) {
+            const url = '/' + route.path;
+            if (route.path === 'account/security') {
+                expect(run(url)).withContext(url).toBeTrue();
+            } else {
+                expect(TestBed.inject(Router).serializeUrl(run(url) as UrlTree))
+                    .withContext(url)
+                    .toBe('/account/security');
+            }
+        }
     });
 });
