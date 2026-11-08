@@ -1,11 +1,13 @@
 import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ProblemDetails } from '../../shared/models/problem-details.model';
-import { FORBIDDEN_CODE, TENANT_SUSPENDED_CODE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
+import { FORBIDDEN_CODE, MFA_ENROLLMENT_REQUIRED_CODE, SECURITY_ROUTE, TENANT_SUSPENDED_CODE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
 import { AccountService } from '../services/account';
 import { AuthService, SESSION_ENDED_MESSAGE } from '../services/auth';
+import { CurrentSessionService } from '../services/current-session';
 
 // Rutas anónimas de la API: no llevan token, y su 401 es una respuesta normal del flujo
 // (credenciales o código erróneos) que muestra la pantalla de login, no una sesión caducada.
@@ -26,6 +28,11 @@ function isForbidden(error: HttpErrorResponse): boolean {
     return error.status === 403 && (error.error as ProblemDetails | null)?.code === FORBIDDEN_CODE;
 }
 
+// Spec 022: el rol exige el segundo factor y la cuenta no lo tiene. Es distinto de auth.forbidden: no es «tu rol no puede», sino «actívalo y podrás».
+function isEnrollmentRequired(error: HttpErrorResponse): boolean {
+    return error.status === 403 && (error.error as ProblemDetails | null)?.code === MFA_ENROLLMENT_REQUIRED_CODE;
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
     // El token solo viaja a nuestra API. Si se añadiera a cualquier petición, una llamada a un
     // dominio externo (un CDN, un servicio de mapas...) se llevaría la sesión del usuario.
@@ -36,6 +43,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     // inject() solo funciona aquí, al empezar el interceptor, y no dentro de los callbacks de más abajo.
     const authService = inject(AuthService);
     const accountService = inject(AccountService);
+    const router = inject(Router);
+    const currentSession = inject(CurrentSessionService);
 
     return next(withToken(req, authService.getToken())).pipe(
         catchError((error: HttpErrorResponse) => {
@@ -54,6 +63,20 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
             if (isForbidden(error)) {
                 if (req.url !== ACCOUNT_URL) {
                     accountService.load().subscribe();
+                }
+                return throwError(() => error);
+            }
+
+            // El rol exige el segundo factor y la interfaz no lo sabía (te promovieron a Admin con la sesión abierta, o te reiniciaron el factor): se vuelve a pedir la cuenta y,
+            // si de verdad debe activarlo, se lleva a la pantalla de seguridad. NO cierra la sesión (la persona puede activarlo ahora mismo) y no reintenta la petición (volvería a dar 403).
+            // Sin bucle: la petición de la cuenta (permitida sin el factor) no entra aquí, y no se navega si ya está en esa pantalla. El error sigue su camino con el texto de la API.
+            if (isEnrollmentRequired(error)) {
+                if (req.url !== ACCOUNT_URL) {
+                    accountService.load().subscribe((loaded) => {
+                        if (loaded && currentSession.mustEnrollSecondFactor() && !router.url.startsWith(SECURITY_ROUTE)) {
+                            void router.navigateByUrl(SECURITY_ROUTE);
+                        }
+                    });
                 }
                 return throwError(() => error);
             }

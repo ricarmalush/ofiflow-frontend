@@ -47,6 +47,10 @@ export class CurrentSessionService {
     // El rol EFECTIVO (el de la base de datos), nunca el del token.
     readonly role = computed(() => this.currentAccount()?.role ?? null);
     readonly membershipId = computed(() => this.currentAccount()?.membershipId ?? null);
+
+    // Spec 022. Sin cuenta cargada es false (no se sabe nada): el guardián exige la cuenta cargada antes de mirar esto, y la API es la que impone la obligación en cada petición.
+    readonly mustEnrollSecondFactor = computed(() => this.currentAccount()?.secondFactorEnrollmentRequired ?? false);
+    readonly secondFactorRequired = computed(() => this.currentAccount()?.secondFactorRequired ?? false);
     readonly permissions = computed(() => new Set<string>(this.currentAccount()?.permissions ?? []));
 
     // Para la interfaz (mostrar u ocultar). Sin cuenta cargada, o con un permiso que la API no dio, es false.

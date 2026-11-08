@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MenuItem } from 'primeng/api';
 import { AppMenuitem } from './app.menuitem';
+import { SECURITY_ROUTE } from '../../core/constants/api-error-codes';
 import { CurrentSessionService } from '../../core/services/current-session';
 import { Permission } from '../../shared/models/permission.model';
 
@@ -27,6 +28,13 @@ export class AppMenu {
     // tiene el permiso de lectura de su pantalla; las secciones vacías no se muestran.
     readonly model = computed<MenuItem[]>(() => {
         const can = (permission: Permission) => this.session.can(permission);
+        const security: MenuItem = { label: 'Seguridad', icon: 'pi pi-fw pi-shield', routerLink: [SECURITY_ROUTE] };
+
+        // Quien debe activar el segundo factor (spec 022) solo puede ir a la pantalla de seguridad: el menú no ofrece nada más (todo lo demás le daría un 403).
+        if (this.session.mustEnrollSecondFactor()) {
+            return can('Mfa.Manage') ? [{ label: 'Mi cuenta', items: [security] }] : [];
+        }
+
         const sections: MenuItem[] = [
             {
                 label: 'Inicio',
@@ -46,7 +54,7 @@ export class AppMenu {
             },
             {
                 label: 'Mi cuenta',
-                items: [...(can('Mfa.Manage') ? [{ label: 'Seguridad', icon: 'pi pi-fw pi-shield', routerLink: ['/account/security'] }] : [])]
+                items: [...(can('Mfa.Manage') ? [security] : [])]
             }
         ];
         return sections.filter((section) => section.items?.length);

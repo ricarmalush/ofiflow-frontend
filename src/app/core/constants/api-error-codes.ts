@@ -11,3 +11,10 @@ export const TENANT_SUSPENDED_MESSAGE = 'Tu empresa está suspendida. Ponte en c
 // 403 por falta de permiso: «tu rol no puede hacer esto». Si el rol cambió desde que se cargó la
 // cuenta, la interfaz estaba ofreciendo algo que ya no puede; se vuelve a pedir la cuenta para corregirla.
 export const FORBIDDEN_CODE = 'auth.forbidden';
+
+// 403 de la obligación del segundo factor (spec 022): «tu rol exige el segundo factor y todavía no lo tienes activo». NO es auth.forbidden: la persona está autenticada y puede hacer
+// algo, activarlo. No cierra la sesión: lleva a la pantalla de seguridad (donde se activa). Se decide por el código, nunca por el texto.
+export const MFA_ENROLLMENT_REQUIRED_CODE = 'mfa.enrollment_required';
+
+// La pantalla donde se activa el segundo factor: la única a la que puede ir quien debe activarlo y no lo ha hecho (spec 022 D9).
+export const SECURITY_ROUTE = '/account/security';

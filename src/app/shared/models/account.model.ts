@@ -15,4 +15,9 @@ export interface CurrentAccount {
     role: TenantRole;
     // Nombres estables de la API (Customers.Read...). Son para pintar la interfaz: quien decide es siempre la API.
     permissions: string[];
+    // Spec 022: mi rol efectivo exige el segundo factor y todavía no lo tengo activo (uno pedido y sin confirmar no cuenta). Es el mismo dato que usa la puerta de la API; con él se
+    // lleva a la pantalla de activarlo en vez de dejar que cada pantalla choque con un 403. Informativo: quien lo impone es la API, en cada petición.
+    secondFactorEnrollmentRequired: boolean;
+    // Spec 022: mi rol efectivo exige el segundo factor, LO TENGA ACTIVO O NO. Es lo que permite esconder «Desactivar» sin copiar aquí qué roles lo exigen. Informativo.
+    secondFactorRequired: boolean;
 }

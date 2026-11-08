@@ -4,12 +4,15 @@ import { Dashboard } from './app/pages/dashboard/dashboard';
 import { Notfound } from './app/pages/notfound/notfound';
 import { authGuard } from './app/core/guards/auth.guard';
 import { permissionGuard } from './app/core/guards/permission.guard';
+import { secondFactorGuard } from './app/core/guards/second-factor.guard';
 
 export const appRoutes: Routes = [
     {
         path: '',
         component: AppLayout,
         canActivate: [authGuard],
+        // Quien debe activar el segundo factor y no lo ha hecho solo puede ir a la pantalla de seguridad (spec 022): se comprueba al entrar en CUALQUIER ruta hija.
+        canActivateChild: [secondFactorGuard],
         children: [
             { path: '', component: Dashboard },
             {

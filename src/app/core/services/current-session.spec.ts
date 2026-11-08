@@ -11,8 +11,56 @@ const account: CurrentAccount = {
     tenantId: '22222222-2222-2222-2222-222222222222',
     tenantName: 'Empresa',
     role: 'Manager',
-    permissions: ['Customers.Read', 'Customers.Write', 'Jobs.Assign']
+    permissions: ['Customers.Read', 'Customers.Write', 'Jobs.Assign'],
+    secondFactorEnrollmentRequired: false,
+    secondFactorRequired: false
 };
+
+describe('CurrentSessionService · segundo factor (spec 022)', () => {
+    let service: CurrentSessionService;
+
+    beforeEach(() => {
+        TestBed.configureTestingModule({});
+        service = TestBed.inject(CurrentSessionService);
+    });
+
+    it('says nothing must be enrolled while the account is not loaded (the API denies anyway)', () => {
+        expect(service.mustEnrollSecondFactor()).toBeFalse();
+        expect(service.secondFactorRequired()).toBeFalse();
+    });
+
+    it('reads both flags from the account the API gave, not from the role', () => {
+        service.setAccount({ ...account, role: 'Technician', secondFactorEnrollmentRequired: true, secondFactorRequired: true });
+
+        expect(service.mustEnrollSecondFactor()).toBeTrue();
+        expect(service.secondFactorRequired()).toBeTrue();
+    });
+
+    it('the two flags are independent: required but already enrolled', () => {
+        service.setAccount({ ...account, role: 'Owner', secondFactorEnrollmentRequired: false, secondFactorRequired: true });
+
+        expect(service.mustEnrollSecondFactor()).toBeFalse();
+        expect(service.secondFactorRequired()).toBeTrue();
+    });
+
+    it('follows a new account without anything else (enrolling lifts the obligation, a demotion lifts both)', () => {
+        service.setAccount({ ...account, secondFactorEnrollmentRequired: true, secondFactorRequired: true });
+        service.setAccount({ ...account, secondFactorEnrollmentRequired: false, secondFactorRequired: true });
+        expect(service.mustEnrollSecondFactor()).toBeFalse();
+
+        service.setAccount({ ...account, secondFactorEnrollmentRequired: false, secondFactorRequired: false });
+        expect(service.secondFactorRequired()).toBeFalse();
+    });
+
+    it('forgets both flags when the session is cleared (another person in the same browser does not inherit them)', () => {
+        service.setAccount({ ...account, secondFactorEnrollmentRequired: true, secondFactorRequired: true });
+
+        service.clear();
+
+        expect(service.mustEnrollSecondFactor()).toBeFalse();
+        expect(service.secondFactorRequired()).toBeFalse();
+    });
+});
 
 describe('CurrentSessionService', () => {
     let service: CurrentSessionService;

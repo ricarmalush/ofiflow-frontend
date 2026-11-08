@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CurrentSessionService } from '@/app/core/services/current-session';
 import { buildAccount } from '@/app/core/testing/fake-account';
@@ -64,5 +64,69 @@ describe('AppMenu', () => {
         fixture.detectChanges();
 
         expect(labels(fixture.nativeElement)).toContain('Agenda');
+    });
+});
+
+describe('AppMenu · segundo factor obligatorio (spec 022)', () => {
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([])] }));
+
+    function render(account: Parameters<typeof buildAccount>[0]): ComponentFixture<AppMenu> {
+        const session = TestBed.inject(CurrentSessionService);
+        session.establish(buildSessionToken());
+        session.setAccount(buildAccount(account));
+        const fixture = TestBed.createComponent(AppMenu);
+        fixture.detectChanges();
+        return fixture;
+    }
+
+    const labels = (host: HTMLElement) => Array.from(host.querySelectorAll('a .layout-menuitem-text')).map((text) => text.textContent?.trim());
+
+    it('whoever must enrol the factor sees ONLY "Seguridad" (everything else would answer 403)', () => {
+        const fixture = render({ role: 'Owner', secondFactorEnrollmentRequired: true, secondFactorRequired: true });
+
+        expect(labels(fixture.nativeElement)).toEqual(['Mi cuenta', 'Seguridad']);
+        const link = fixture.nativeElement.querySelector('a[href="/account/security"]');
+        expect(link).not.toBeNull();
+    });
+
+    it('without the permission to manage the factor, the restricted menu offers nothing (the API would deny it anyway)', () => {
+        const fixture = render({ role: 'Owner', permissions: ['Customers.Read'], secondFactorEnrollmentRequired: true });
+
+        expect(labels(fixture.nativeElement)).toEqual([]);
+    });
+
+    it('obeys what the API said, not the role name: a Technician told to enrol sees the restricted menu', () => {
+        const fixture = render({ role: 'Technician', secondFactorEnrollmentRequired: true });
+
+        expect(labels(fixture.nativeElement)).toEqual(['Mi cuenta', 'Seguridad']);
+    });
+
+    it('obeys what the API said, not the role name: an Owner who already has the factor sees the full menu', () => {
+        const fixture = render({ role: 'Owner', secondFactorEnrollmentRequired: false, secondFactorRequired: true });
+
+        expect(labels(fixture.nativeElement)).toEqual(jasmine.arrayContaining(['Inicio', 'Dashboard', 'Clientes', 'Trabajos', 'Agenda', 'Equipo', 'Seguridad']));
+    });
+
+    it('the menu follows the account WITHOUT navigating: it opens up once the factor is enrolled', () => {
+        const session = TestBed.inject(CurrentSessionService);
+        const fixture = render({ role: 'Owner', secondFactorEnrollmentRequired: true, secondFactorRequired: true });
+        expect(labels(fixture.nativeElement)).toEqual(['Mi cuenta', 'Seguridad']);
+
+        session.setAccount(buildAccount({ role: 'Owner', secondFactorEnrollmentRequired: false, secondFactorRequired: true }));
+        fixture.detectChanges();
+
+        expect(labels(fixture.nativeElement)).toContain('Clientes');
+        expect(labels(fixture.nativeElement)).toContain('Dashboard');
+    });
+
+    it('and it closes when someone is promoted while inside (a fresh account that says they must enrol)', () => {
+        const session = TestBed.inject(CurrentSessionService);
+        const fixture = render({ role: 'Technician' });
+        expect(labels(fixture.nativeElement)).toContain('Trabajos');
+
+        session.setAccount(buildAccount({ role: 'Admin', secondFactorEnrollmentRequired: true, secondFactorRequired: true }));
+        fixture.detectChanges();
+
+        expect(labels(fixture.nativeElement)).toEqual(['Mi cuenta', 'Seguridad']);
     });
 });
