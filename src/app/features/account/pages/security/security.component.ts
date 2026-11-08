@@ -17,6 +17,7 @@ import { SessionInfo } from '../../../../shared/models/session.model';
 import { OperationResult } from '../../../../shared/models/result.model';
 import { MfaService } from '../../services/mfa.service';
 import { SessionsService } from '../../services/sessions.service';
+import { ChangePasswordComponent } from './change-password.component';
 
 // Qué está viendo la persona. Los pasos de activar van en orden: contraseña → escanear y
 // confirmar con un código → guardar los códigos de recuperación.
@@ -27,7 +28,7 @@ const SESSION_CLOSED_MESSAGE = 'Por seguridad se han cerrado todas tus sesiones.
 @Component({
     selector: 'app-security',
     standalone: true,
-    imports: [DatePipe, NgTemplateOutlet, ReactiveFormsModule, FormsModule, ButtonModule, InputTextModule, PasswordModule, MessageModule, TagModule, CheckboxModule],
+    imports: [DatePipe, NgTemplateOutlet, ReactiveFormsModule, FormsModule, ButtonModule, InputTextModule, PasswordModule, MessageModule, TagModule, CheckboxModule, ChangePasswordComponent],
     templateUrl: './security.component.html'
 })
 export class SecurityComponent implements OnInit {
@@ -51,6 +52,8 @@ export class SecurityComponent implements OnInit {
     readonly mustEnroll = this.currentSession.mustEnrollSecondFactor;
     // El rol exige el factor (lo tenga activo o no): no se ofrece «Desactivar». Lo dice la API (me.secondFactorRequired); aquí no se copia qué roles lo exigen.
     readonly secondFactorRequired = this.currentSession.secondFactorRequired;
+    // Cambiar la contraseña (spec 019): con el permiso y sin tener que activar antes el segundo factor (la API le daría 403: la lista cerrada de operaciones permitidas no la incluye).
+    readonly canChangePassword = computed(() => this.currentSession.can('Account.ChangePassword') && !this.mustEnroll());
     readonly canListSessions = computed(() => this.currentSession.can('Account.Read') && !this.mustEnroll());
     readonly canCloseSessions = computed(() => this.currentSession.can('Account.CloseSessions') && !this.mustEnroll());
     readonly showSessionsCard = computed(() => this.canListSessions() || this.canCloseSessions());
@@ -61,6 +64,11 @@ export class SecurityComponent implements OnInit {
     readonly closingId = signal<string | null>(null);
     readonly sessionsError = signal<string | null>(null);
     readonly closingAny = computed(() => this.closingAll() || this.closingId() !== null);
+
+    // Tras cambiar la contraseña la API cerró las demás sesiones: la lista que se ve está desfasada.
+    onPasswordChanged(): void {
+        if (this.canListSessions()) this.loadSessions();
+    }
 
     constructor() {
         // La lista se pide en cuanto hay permiso para verla (la cuenta puede cargarse después que la pantalla, o cambiar de rol).

@@ -113,6 +113,10 @@
     }
 </div>
 
+@if (canChangePassword()) {
+    <app-change-password [mfaEnabled]="status()?.enabled ?? false" (changed)="onPasswordChanged()" />
+}
+
 @if (showSessionsCard()) {
     <div class="card max-w-3xl">
         <div class="font-semibold text-xl mb-2">Sesiones</div>
