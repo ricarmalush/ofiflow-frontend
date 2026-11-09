@@ -22,4 +22,7 @@ export type Permission =
     | 'Mfa.Manage'
     | 'Account.Read'
     | 'Account.CloseSessions'
-    | 'Account.ChangePassword';
+    | 'Account.ChangePassword'
+    | 'Quotes.Read'
+    | 'Quotes.Write'
+    | 'Quotes.Issue';

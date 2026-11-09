@@ -45,6 +45,31 @@ describe('AppMenu', () => {
         expect(labels(host)).toContain('Clientes');
     });
 
+    it('"Presupuestos" is offered after "Agenda" to whoever has Quotes.Read, pointing to /quotes', () => {
+        for (const role of ['Owner', 'Admin', 'Manager', 'Employee'] as const) {
+            TestBed.resetTestingModule();
+            TestBed.configureTestingModule({ providers: [provideRouter([])] });
+            const host = render(role);
+
+            expect(labels(host)).withContext(role).toContain('Presupuestos');
+            expect(hrefOf(host, 'Presupuestos')).withContext(role).toBe('/quotes');
+            expect(labels(host).filter((label) => ['Clientes', 'Trabajos', 'Agenda', 'Presupuestos'].includes(label ?? ''))).withContext(role).toEqual(['Clientes', 'Trabajos', 'Agenda', 'Presupuestos']);
+        }
+    });
+
+    it('a Technician has no "Presupuestos" (the prices are commercial information)', () => {
+        const host = render('Technician');
+
+        expect(labels(host)).not.toContain('Presupuestos');
+        expect(labels(host)).toContain('Trabajos');
+    });
+
+    it('without Quotes.Read there is no "Presupuestos", whatever else the account has', () => {
+        const host = render('Owner', ['Customers.Read', 'Jobs.Read', 'Quotes.Write', 'Quotes.Issue']);
+
+        expect(labels(host)).not.toContain('Presupuestos');
+    });
+
     it('before the account is loaded the menu offers nothing beyond the dashboard (fail-closed)', () => {
         const host = render(null);
 

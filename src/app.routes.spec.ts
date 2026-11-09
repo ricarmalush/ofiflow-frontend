@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, RouterStateSnapshot, UrlTree, Route, Router, provideRouter } from '@angular/router';
 import { AgendaComponent } from './app/features/agenda/pages/agenda/agenda.component';
+import { QuoteFormComponent } from './app/features/quotes/pages/quote-form/quote-form.component';
+import { QuoteListComponent } from './app/features/quotes/pages/quote-list/quote-list.component';
 import { CurrentSessionService } from './app/core/services/current-session';
 import { buildAccount } from './app/core/testing/fake-account';
 import { buildSessionToken } from './app/core/testing/fake-jwt';
@@ -94,5 +96,66 @@ describe('app routes · segundo factor obligatorio', () => {
                     .toBe('/account/security');
             }
         }
+    });
+});
+
+// Las rutas de los presupuestos (spec 023): cada una con su permiso. El guard es solo interfaz (la API vuelve a comprobar el permiso en cada petición),
+// pero una ruta sin guard enseñaría la pantalla a quien no puede usarla.
+describe('app routes · quotes', () => {
+    const layoutChildren = () => (appRoutes.find((route) => route.path === '' && route.children)?.children ?? []) as Route[];
+    const routeOf = (path: string) => layoutChildren().find((route) => route.path === path);
+
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([])] }));
+
+    function enter(account: Parameters<typeof buildAccount>[0]): void {
+        const session = TestBed.inject(CurrentSessionService);
+        session.establish(buildSessionToken());
+        session.setAccount(buildAccount(account));
+    }
+
+    const canActivate = (path: string) => {
+        const guards = routeOf(path)?.canActivate ?? [];
+        expect(guards.length).toBe(1);
+        return TestBed.runInInjectionContext(() => (guards[0] as (r: ActivatedRouteSnapshot, s: RouterStateSnapshot) => unknown)({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot));
+    };
+
+    it('the three routes exist once, inside the logged-in layout, and load their screens', async () => {
+        for (const path of ['quotes', 'quotes/new', 'quotes/:id']) {
+            expect(layoutChildren().filter((route) => route.path === path).length)
+                .withContext(path)
+                .toBe(1);
+        }
+        expect(await (routeOf('quotes')?.loadComponent as () => Promise<unknown>)()).toBe(QuoteListComponent);
+        expect(await (routeOf('quotes/new')?.loadComponent as () => Promise<unknown>)()).toBe(QuoteFormComponent);
+        expect(await (routeOf('quotes/:id')?.loadComponent as () => Promise<unknown>)()).toBe(QuoteFormComponent);
+    });
+
+    it('the list and a saved quote ask for READING; a new quote asks for WRITING', () => {
+        enter({ role: 'Owner', permissions: ['Quotes.Read'] });
+
+        expect(canActivate('quotes')).toBeTrue();
+        expect(canActivate('quotes/:id')).toBeTrue();
+        expect(canActivate('quotes/new')).toBeInstanceOf(UrlTree); // leer no basta para crear
+    });
+
+    it('someone with Quotes.Write but not Quotes.Read is sent away from the list', () => {
+        enter({ role: 'Owner', permissions: ['Quotes.Write'] });
+
+        expect(canActivate('quotes')).toBeInstanceOf(UrlTree);
+        expect(canActivate('quotes/new')).toBeTrue();
+    });
+
+    it('a Technician (no quote permission at all) cannot enter any of them', () => {
+        enter({ role: 'Technician' });
+
+        for (const path of ['quotes', 'quotes/new', 'quotes/:id']) {
+            expect(canActivate(path)).withContext(path).toBeInstanceOf(UrlTree);
+        }
+    });
+
+    it('denies while the account is not loaded (fail-closed)', () => {
+        TestBed.inject(CurrentSessionService).establish(buildSessionToken({ role: 'Owner' }));
+
+        expect(canActivate('quotes')).toBeInstanceOf(UrlTree);
     });
 });

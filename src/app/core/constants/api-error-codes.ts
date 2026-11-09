@@ -16,5 +16,8 @@ export const FORBIDDEN_CODE = 'auth.forbidden';
 // algo, activarlo. No cierra la sesión: lleva a la pantalla de seguridad (donde se activa). Se decide por el código, nunca por el texto.
 export const MFA_ENROLLMENT_REQUIRED_CODE = 'mfa.enrollment_required';
 
+// Alguien modificó el presupuesto mientras se editaba (spec 023 R10): la API no pisa nada y la pantalla ofrece recargar o guardar de todos modos. Se decide por el código, nunca por el texto.
+export const QUOTE_CHANGED_MEANWHILE_CODE = 'quote.changed_meanwhile';
+
 // La pantalla donde se activa el segundo factor: la única a la que puede ir quien debe activarlo y no lo ha hecho (spec 022 D9).
 export const SECURITY_ROUTE = '/account/security';

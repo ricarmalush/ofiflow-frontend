@@ -51,6 +51,22 @@ export const appRoutes: Routes = [
                 loadComponent: () => import('./app/features/agenda/pages/agenda/agenda.component').then((c) => c.AgendaComponent)
             },
             {
+                path: 'quotes',
+                canActivate: [permissionGuard('Quotes.Read')],
+                loadComponent: () => import('./app/features/quotes/pages/quote-list/quote-list.component').then((c) => c.QuoteListComponent)
+            },
+            {
+                path: 'quotes/new',
+                canActivate: [permissionGuard('Quotes.Write')],
+                loadComponent: () => import('./app/features/quotes/pages/quote-form/quote-form.component').then((c) => c.QuoteFormComponent)
+            },
+            {
+                // Quien solo puede leer entra en modo lectura: la pantalla se pone en solo lectura sin Quotes.Write o si el presupuesto ya no es un borrador.
+                path: 'quotes/:id',
+                canActivate: [permissionGuard('Quotes.Read')],
+                loadComponent: () => import('./app/features/quotes/pages/quote-form/quote-form.component').then((c) => c.QuoteFormComponent)
+            },
+            {
                 path: 'team',
                 canActivate: [permissionGuard('Users.Read')],
                 loadComponent: () => import('./app/features/team/pages/team/team.component').then((c) => c.TeamComponent)
