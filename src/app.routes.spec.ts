@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, RouterStateSnapshot, UrlTree, Route, Router, provideRouter } from '@angular/router';
 import { AgendaComponent } from './app/features/agenda/pages/agenda/agenda.component';
+import { CompanyProfileComponent } from './app/features/company/pages/company-profile/company-profile.component';
 import { QuoteFormComponent } from './app/features/quotes/pages/quote-form/quote-form.component';
 import { QuoteListComponent } from './app/features/quotes/pages/quote-list/quote-list.component';
 import { CurrentSessionService } from './app/core/services/current-session';
@@ -157,5 +158,63 @@ describe('app routes · quotes', () => {
         TestBed.inject(CurrentSessionService).establish(buildSessionToken({ role: 'Owner' }));
 
         expect(canActivate('quotes')).toBeInstanceOf(UrlTree);
+    });
+});
+
+// El perfil fiscal de la empresa (spec 024): una sola ruta, que exige LEER (Company.Read). Quien solo puede leer entra en modo lectura; modificar lo decide la pantalla (Company.Manage).
+describe('app routes · company', () => {
+    const layoutChildren = () => (appRoutes.find((route) => route.path === '' && route.children)?.children ?? []) as Route[];
+    const companyRoute = () => layoutChildren().find((route) => route.path === 'company');
+
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([])] }));
+
+    function enter(account: Parameters<typeof buildAccount>[0]): void {
+        const session = TestBed.inject(CurrentSessionService);
+        session.establish(buildSessionToken());
+        session.setAccount(buildAccount(account));
+    }
+
+    const canActivate = () => {
+        const guards = companyRoute()?.canActivate ?? [];
+        expect(guards.length).toBe(1);
+        return TestBed.runInInjectionContext(() => (guards[0] as (r: ActivatedRouteSnapshot, s: RouterStateSnapshot) => unknown)({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot));
+    };
+
+    it('exists once, inside the logged-in layout (so it also needs a session and the second-factor guard), and loads the company screen', async () => {
+        expect(layoutChildren().filter((route) => route.path === 'company').length).toBe(1);
+        expect(appRoutes.find((route) => route.path === '' && route.children)?.canActivate?.length).toBe(1);
+
+        const loaded = await (companyRoute()?.loadComponent as () => Promise<unknown>)();
+
+        expect(loaded).toBe(CompanyProfileComponent);
+    });
+
+    it('lets in whoever has Company.Read: Owner, Admin, Manager and Employee', () => {
+        for (const role of ['Owner', 'Admin', 'Manager', 'Employee'] as const) {
+            TestBed.resetTestingModule();
+            TestBed.configureTestingModule({ providers: [provideRouter([])] });
+            enter({ role });
+
+            expect(canActivate()).withContext(role).toBeTrue();
+        }
+    });
+
+    it('sends a Technician to the access-denied screen', () => {
+        enter({ role: 'Technician' });
+
+        const result = canActivate() as UrlTree;
+        expect(TestBed.inject(Router).serializeUrl(result)).toBe('/auth/access');
+    });
+
+    it('sends away someone who has Company.Manage but not Company.Read: the route asks for READING', () => {
+        enter({ role: 'Owner', permissions: ['Company.Manage', 'Customers.Read'] });
+
+        expect(canActivate()).toBeInstanceOf(UrlTree);
+    });
+
+    it('denies while the account is not loaded (fail-closed)', () => {
+        TestBed.inject(CurrentSessionService).establish(buildSessionToken({ role: 'Owner' }));
+
+        expect(canActivate()).toBeInstanceOf(UrlTree);
     });
 });

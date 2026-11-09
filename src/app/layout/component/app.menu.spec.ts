@@ -90,6 +90,47 @@ describe('AppMenu', () => {
 
         expect(labels(fixture.nativeElement)).toContain('Agenda');
     });
+
+    it('"Datos de la empresa" is offered in "Administración" to whoever has Company.Read, pointing to /company', () => {
+        for (const role of ['Owner', 'Admin', 'Manager', 'Employee'] as const) {
+            TestBed.resetTestingModule();
+            TestBed.configureTestingModule({ providers: [provideRouter([])] });
+            const host = render(role);
+
+            expect(labels(host)).withContext(role).toContain('Datos de la empresa');
+            expect(hrefOf(host, 'Datos de la empresa')).withContext(role).toBe('/company');
+        }
+    });
+
+    it('a Technician has no "Datos de la empresa"', () => {
+        expect(labels(render('Technician'))).not.toContain('Datos de la empresa');
+    });
+
+    it('without Company.Read there is no "Datos de la empresa", even with Company.Manage', () => {
+        const host = render('Owner', ['Company.Manage', 'Customers.Read', 'Account.Read']);
+
+        expect(labels(host)).not.toContain('Datos de la empresa');
+    });
+
+    it('a Manager, who cannot see the team, still sees "Datos de la empresa" and the "Administración" section stays', () => {
+        const host = render('Manager', ['Company.Read', 'Account.Read']);
+
+        expect(labels(host)).toContain('Datos de la empresa');
+        expect(labels(host)).not.toContain('Equipo');
+    });
+
+    it('someone who must enrol the second factor is offered nothing of the company', () => {
+        const fixture = (() => {
+            const session = TestBed.inject(CurrentSessionService);
+            session.establish(buildSessionToken());
+            session.setAccount(buildAccount({ role: 'Owner', secondFactorEnrollmentRequired: true, secondFactorRequired: true }));
+            const f = TestBed.createComponent(AppMenu);
+            f.detectChanges();
+            return f;
+        })();
+
+        expect(labels(fixture.nativeElement)).not.toContain('Datos de la empresa');
+    });
 });
 
 describe('AppMenu · segundo factor obligatorio (spec 022)', () => {

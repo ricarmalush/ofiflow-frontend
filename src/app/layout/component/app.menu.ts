@@ -51,7 +51,10 @@ export class AppMenu {
             },
             {
                 label: 'Administración',
-                items: [...(can('Users.Read') ? [{ label: 'Equipo', icon: 'pi pi-fw pi-id-card', routerLink: ['/team'] }] : [])]
+                items: [
+                    ...(can('Users.Read') ? [{ label: 'Equipo', icon: 'pi pi-fw pi-id-card', routerLink: ['/team'] }] : []),
+                    ...(can('Company.Read') ? [{ label: 'Datos de la empresa', icon: 'pi pi-fw pi-building', routerLink: ['/company'] }] : [])
+                ]
             },
             {
                 label: 'Mi cuenta',

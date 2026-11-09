@@ -72,6 +72,12 @@ export const appRoutes: Routes = [
                 loadComponent: () => import('./app/features/team/pages/team/team.component').then((c) => c.TeamComponent)
             },
             {
+                // Quien solo puede leer entra en modo lectura: la pantalla se pone en solo lectura sin Company.Manage (spec 024).
+                path: 'company',
+                canActivate: [permissionGuard('Company.Read')],
+                loadComponent: () => import('./app/features/company/pages/company-profile/company-profile.component').then((c) => c.CompanyProfileComponent)
+            },
+            {
                 path: 'account/security',
                 canActivate: [permissionGuard('Mfa.Manage')],
                 loadComponent: () => import('./app/features/account/pages/security/security.component').then((c) => c.SecurityComponent)

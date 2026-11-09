@@ -25,4 +25,6 @@ export type Permission =
     | 'Account.ChangePassword'
     | 'Quotes.Read'
     | 'Quotes.Write'
-    | 'Quotes.Issue';
+    | 'Quotes.Issue'
+    | 'Company.Read'
+    | 'Company.Manage';
