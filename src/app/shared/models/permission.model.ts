@@ -21,4 +21,5 @@ export type Permission =
     | 'Users.Manage'
     | 'Mfa.Manage'
     | 'Account.Read'
-    | 'Account.CloseSessions';
+    | 'Account.CloseSessions'
+    | 'Account.ChangePassword';
