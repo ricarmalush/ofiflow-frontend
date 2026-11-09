@@ -5,14 +5,14 @@ import { TenantRole } from '../../shared/models/auth.model';
 // rol están escritas aquí A MANO y solo sirven para que los tests tengan un rol creíble: el código de
 // la aplicación NO las usa (los permisos reales los dice la API). Si el backend cambia la tabla, lo
 // que importa es que la aplicación obedezca a la API, no que estas listas coincidan.
-const OWNER = ['Account.ChangePassword', 'Account.CloseSessions', 'Account.Read', 'Customers.Delete', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Schedule', 'Jobs.Write', 'Mfa.Manage', 'Quotes.Issue', 'Quotes.Read', 'Quotes.Write', 'Users.Manage', 'Users.Read'];
+const OWNER = ['Account.ChangePassword', 'Account.CloseSessions', 'Account.Read', 'Company.Manage', 'Company.Read', 'Customers.Delete', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Schedule', 'Jobs.Write', 'Mfa.Manage', 'Quotes.Issue', 'Quotes.Read', 'Quotes.Write', 'Users.Manage', 'Users.Read'];
 
 export const PERMISSIONS_OF: Readonly<Record<TenantRole, string[]>> = {
     Owner: OWNER,
     Admin: OWNER,
-    Manager: ['Account.ChangePassword', 'Account.CloseSessions', 'Account.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Schedule', 'Jobs.Write', 'Mfa.Manage', 'Quotes.Issue', 'Quotes.Read', 'Quotes.Write', 'Users.Read'],
+    Manager: ['Account.ChangePassword', 'Account.CloseSessions', 'Account.Read', 'Company.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Assign', 'Jobs.Cancel', 'Jobs.Execute', 'Jobs.Read', 'Jobs.Schedule', 'Jobs.Write', 'Mfa.Manage', 'Quotes.Issue', 'Quotes.Read', 'Quotes.Write', 'Users.Read'],
     // Prepara presupuestos (los ve y los escribe) pero no los compromete: enviar, aceptar y rechazar es Quotes.Issue (spec 023 D11).
-    Employee: ['Account.ChangePassword', 'Account.CloseSessions', 'Account.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage', 'Quotes.Read', 'Quotes.Write'],
+    Employee: ['Account.ChangePassword', 'Account.CloseSessions', 'Account.Read', 'Company.Read', 'Customers.Read', 'Customers.Write', 'Jobs.Read', 'Jobs.Write', 'Mfa.Manage', 'Quotes.Read', 'Quotes.Write'],
     Technician: ['Account.ChangePassword', 'Account.CloseSessions', 'Account.Read', 'Customers.Read', 'Jobs.Execute', 'Jobs.Read', 'Mfa.Manage']
 };
 
