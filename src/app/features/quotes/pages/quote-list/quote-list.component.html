@@ -1,0 +1,89 @@
+<div class="card">
+    <p-toolbar styleClass="mb-6">
+        <ng-template #start>
+            <div class="font-semibold text-xl">Presupuestos</div>
+        </ng-template>
+        <ng-template #end>
+            @if (canWrite()) {
+                <p-button label="Nuevo presupuesto" icon="pi pi-plus" routerLink="/quotes/new" />
+            }
+        </ng-template>
+    </p-toolbar>
+
+    @if (errorMessage()) {
+        <p-message severity="error" styleClass="mb-4">{{ errorMessage() }}</p-message>
+    }
+
+    <div class="flex flex-wrap gap-4 mb-4">
+        <p-select
+            [options]="statusOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Todos los estados"
+            [showClear]="true"
+            [ngModel]="statusFilter()"
+            (ngModelChange)="setStatus($event)"
+            styleClass="w-full md:w-56"
+            ariaLabel="Filtrar por estado"
+        />
+        @if (customerOptions().length) {
+            <p-select
+                [options]="customerOptions()"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Todos los clientes"
+                [showClear]="true"
+                [filter]="true"
+                [ngModel]="customerFilter()"
+                (ngModelChange)="setCustomer($event)"
+                styleClass="w-full md:w-72"
+                ariaLabel="Filtrar por cliente"
+            />
+        }
+    </div>
+
+    <p-table [value]="rows()" [loading]="loading()" [rowHover]="true" [stripedRows]="true" dataKey="id">
+        <ng-template #header>
+            <tr>
+                <th class="w-32">Número</th>
+                <th>Cliente</th>
+                <th>Título</th>
+                <th>Estado</th>
+                <th class="text-right">Total</th>
+                <th>Válido hasta</th>
+                <th class="w-24"></th>
+            </tr>
+        </ng-template>
+
+        <ng-template #body let-quote>
+            <tr>
+                <td class="whitespace-nowrap">{{ quote.numberLabel }}</td>
+                <td>{{ quote.customerName }}</td>
+                <td>{{ quote.title }}</td>
+                <td>
+                    <p-tag [value]="statusLabel(quote.status)" [severity]="statusSeverity(quote.status)" />
+                    @if (quote.expired) {
+                        <p-tag value="Caducado" severity="warn" styleClass="ml-2" />
+                    }
+                </td>
+                <td class="text-right whitespace-nowrap">{{ quote.totalLabel }}</td>
+                <td class="whitespace-nowrap">{{ quote.validUntil ?? '—' }}</td>
+                <td class="text-right whitespace-nowrap">
+                    @if (quote.editable) {
+                        <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" ariaLabel="Editar" [routerLink]="['/quotes', quote.id]" />
+                    } @else {
+                        <p-button icon="pi pi-eye" [rounded]="true" [text]="true" ariaLabel="Ver" [routerLink]="['/quotes', quote.id]" />
+                    }
+                </td>
+            </tr>
+        </ng-template>
+
+        <ng-template #emptymessage>
+            <tr>
+                <td colspan="7" class="text-center text-muted-color py-8">No hay presupuestos.</td>
+            </tr>
+        </ng-template>
+    </p-table>
+
+    <p-paginator [first]="first()" [rows]="pageSize" [totalRecords]="totalCount()" (onPageChange)="onPage($event)" [showCurrentPageReport]="true" currentPageReportTemplate="{first}-{last} de {totalRecords}" />
+</div>

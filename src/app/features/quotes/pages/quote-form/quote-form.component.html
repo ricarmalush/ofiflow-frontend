@@ -1,0 +1,262 @@
+<div class="card max-w-6xl">
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+        <div class="font-semibold text-xl" data-testid="quote-heading">
+            @if (isNew()) {
+                Nuevo presupuesto
+            } @else if (quote()) {
+                Presupuesto {{ formatQuoteNumber(quote()!.number) }}
+            } @else {
+                Presupuesto
+            }
+        </div>
+        @if (!isNew() && quote()) {
+            <p-tag [value]="statusLabel()" [severity]="statusSeverity()" data-testid="quote-status" />
+            @if (expired()) {
+                <p-tag value="Caducado" severity="warn" data-testid="quote-expired" />
+            }
+        }
+    </div>
+
+    @if (errorMessage()) {
+        <p-message severity="error" styleClass="mb-4" data-testid="quote-error">{{ errorMessage() }}</p-message>
+    }
+    @for (error of fieldErrors(); track $index) {
+        <p-message severity="error" styleClass="mb-2" data-testid="quote-field-error">{{ error.message }}</p-message>
+    }
+
+    @if (latest()) {
+        <p-message severity="warn" styleClass="mb-4" data-testid="quote-conflict">
+            <div class="flex flex-wrap items-center gap-3">
+                <span>Alguien ha modificado este presupuesto mientras lo editabas. No se ha guardado nada. Lo que escribiste sigue en pantalla.</span>
+                <p-button label="Cargar la versión guardada" severity="secondary" size="small" data-testid="quote-load-theirs" (onClick)="loadTheirs()" />
+                <p-button label="Guardar lo mío de todos modos" severity="warn" size="small" data-testid="quote-keep-mine" [disabled]="busy()" (onClick)="keepMine()" />
+            </div>
+        </p-message>
+    }
+
+    @if (readOnly() && !isNew() && quote()) {
+        <p-message severity="info" styleClass="mb-4" data-testid="quote-readonly">
+            @if (!canWrite()) {
+                No tienes permiso para modificar presupuestos.
+            } @else {
+                Un presupuesto {{ statusLabel().toLowerCase() }} no se puede modificar. Si hay que corregirlo, se hace otro.
+            }
+        </p-message>
+    }
+
+    <div class="grid grid-cols-12 gap-4 mb-6">
+        <div class="col-span-12 md:col-span-6 flex flex-col gap-2">
+            <label for="quoteCustomer" class="font-medium">Cliente</label>
+            @if (isNew()) {
+                <p-select
+                    inputId="quoteCustomer"
+                    [options]="customerOptions()"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Elige un cliente"
+                    [filter]="true"
+                    [ngModel]="customerId()"
+                    (ngModelChange)="setCustomer($event)"
+                    styleClass="w-full"
+                />
+                @if (submitted() && headerErrors().customer) {
+                    <small class="text-red-500" data-testid="quote-customer-error">{{ headerErrors().customer }}</small>
+                }
+            } @else {
+                <div class="py-2" data-testid="quote-customer-name">{{ quote()?.customerName }}</div>
+            }
+        </div>
+
+        @if (canChooseJob()) {
+            <div class="col-span-12 md:col-span-6 flex flex-col gap-2">
+                <label for="quoteJob" class="font-medium">Trabajo (opcional, del mismo cliente)</label>
+                <p-select
+                    inputId="quoteJob"
+                    [options]="jobOptions()"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Sin trabajo"
+                    [showClear]="true"
+                    [disabled]="readOnly()"
+                    [ngModel]="jobId()"
+                    (ngModelChange)="jobId.set($event)"
+                    styleClass="w-full"
+                />
+            </div>
+        }
+
+        <div class="col-span-12 md:col-span-8 flex flex-col gap-2">
+            <label for="quoteTitle" class="font-medium">Título</label>
+            <input pInputText id="quoteTitle" type="text" [maxLength]="limits.titleMaxLength" [disabled]="readOnly()" [ngModel]="title()" (ngModelChange)="title.set($event)" />
+            @if (submitted() && headerErrors().title) {
+                <small class="text-red-500" data-testid="quote-title-error">{{ headerErrors().title }}</small>
+            }
+        </div>
+
+        <div class="col-span-12 md:col-span-4 flex flex-col gap-2">
+            <label for="quoteValidUntil" class="font-medium">Válido hasta</label>
+            <input pInputText id="quoteValidUntil" type="date" min="2000-01-01" max="2099-12-31" [disabled]="readOnly()" [ngModel]="validUntil()" (ngModelChange)="validUntil.set($event)" />
+            @if (headerErrors().validUntil) {
+                <small class="text-red-500">{{ headerErrors().validUntil }}</small>
+            }
+        </div>
+
+        <div class="col-span-12 flex flex-col gap-2">
+            <label for="quoteNotes" class="font-medium">Condiciones y observaciones (las ve el cliente)</label>
+            <textarea pTextarea id="quoteNotes" rows="3" [maxLength]="limits.notesMaxLength" [disabled]="readOnly()" [ngModel]="notes()" (ngModelChange)="notes.set($event)"></textarea>
+            @if (headerErrors().notes) {
+                <small class="text-red-500">{{ headerErrors().notes }}</small>
+            }
+        </div>
+    </div>
+
+    <div class="font-semibold text-lg mb-3">Líneas</div>
+
+    <div class="overflow-x-auto mb-4">
+        <table class="w-full" data-testid="quote-lines">
+            <thead>
+                <tr class="text-left">
+                    <th class="p-2">Descripción</th>
+                    <th class="p-2 w-36">Cantidad</th>
+                    <th class="p-2 w-40">Precio unitario</th>
+                    <th class="p-2 w-28">IVA</th>
+                    <th class="p-2 w-32 text-right">Importe</th>
+                    @if (!readOnly()) {
+                        <th class="p-2 w-36"></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @for (line of lines(); track line.key; let i = $index) {
+                    <tr class="align-top" data-testid="quote-line">
+                        <td class="p-2">
+                            <input
+                                pInputText
+                                type="text"
+                                class="w-full"
+                                [attr.aria-label]="'Descripción de la línea ' + (i + 1)"
+                                [maxLength]="limits.descriptionMaxLength"
+                                [disabled]="readOnly()"
+                                [ngModel]="line.description"
+                                (ngModelChange)="setLine(i, { description: $event })"
+                            />
+                            @if (submitted() && lineErrors()[i].description) {
+                                <small class="text-red-500 block" data-testid="line-description-error">{{ lineErrors()[i].description }}</small>
+                            }
+                        </td>
+                        <td class="p-2">
+                            <p-inputnumber
+                                [ngModel]="line.quantity"
+                                (ngModelChange)="setLine(i, { quantity: $event })"
+                                [minFractionDigits]="0"
+                                [maxFractionDigits]="3"
+                                [min]="0"
+                                [max]="limits.quantityMax"
+                                [disabled]="readOnly()"
+                                [ariaLabel]="'Cantidad de la línea ' + (i + 1)"
+                                inputStyleClass="w-full"
+                                styleClass="w-full"
+                            />
+                            @if (submitted() && lineErrors()[i].quantity) {
+                                <small class="text-red-500 block" data-testid="line-quantity-error">{{ lineErrors()[i].quantity }}</small>
+                            }
+                        </td>
+                        <td class="p-2">
+                            <p-inputnumber
+                                [ngModel]="line.priceEuros"
+                                (ngModelChange)="setLine(i, { priceEuros: $event })"
+                                mode="currency"
+                                currency="EUR"
+                                locale="es-ES"
+                                [min]="0"
+                                [disabled]="readOnly()"
+                                [ariaLabel]="'Precio de la línea ' + (i + 1)"
+                                inputStyleClass="w-full"
+                                styleClass="w-full"
+                            />
+                            @if (submitted() && lineErrors()[i].price) {
+                                <small class="text-red-500 block" data-testid="line-price-error">{{ lineErrors()[i].price }}</small>
+                            }
+                        </td>
+                        <td class="p-2">
+                            <p-select
+                                [options]="vatOptions"
+                                optionLabel="label"
+                                optionValue="value"
+                                [disabled]="readOnly()"
+                                [ngModel]="line.vatPercent"
+                                (ngModelChange)="setLine(i, { vatPercent: $event })"
+                                [ariaLabel]="'IVA de la línea ' + (i + 1)"
+                                styleClass="w-full"
+                            />
+                        </td>
+                        <td class="p-2 text-right whitespace-nowrap" data-testid="line-net">{{ lineNetLabel(line) }}</td>
+                        @if (!readOnly()) {
+                            <td class="p-2 whitespace-nowrap text-right">
+                                <p-button icon="pi pi-arrow-up" [rounded]="true" [text]="true" size="small" ariaLabel="Subir la línea" [disabled]="i === 0" (onClick)="moveLine(i, -1)" />
+                                <p-button icon="pi pi-arrow-down" [rounded]="true" [text]="true" size="small" ariaLabel="Bajar la línea" [disabled]="i === lines().length - 1" (onClick)="moveLine(i, 1)" />
+                                <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [text]="true" size="small" ariaLabel="Quitar la línea" (onClick)="removeLine(i)" />
+                            </td>
+                        }
+                    </tr>
+                } @empty {
+                    <tr>
+                        <td colspan="6" class="p-4 text-center text-muted-color" data-testid="quote-no-lines">Todavía no hay líneas.</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (!readOnly()) {
+        <div class="mb-6">
+            <p-button label="Añadir línea" icon="pi pi-plus" severity="secondary" [disabled]="!canAddLine()" data-testid="quote-add-line" (onClick)="addLine()" />
+            @if (!canAddLine() && lines().length >= limits.maxItems) {
+                <small class="ml-3 text-muted-color">Máximo {{ limits.maxItems }} líneas.</small>
+            }
+        </div>
+    }
+
+    <div class="flex justify-end mb-6">
+        <div class="w-full md:w-96" data-testid="quote-totals">
+            @if (isPreview()) {
+                <div class="text-sm text-muted-color mb-2" data-testid="quote-preview-note">Vista previa: el total definitivo lo calcula el servidor al guardar.</div>
+            }
+            @for (row of shownTotals().breakdown; track row.vatPercent) {
+                <div class="flex justify-between py-1" data-testid="quote-breakdown">
+                    <span>Base al {{ row.vatPercent }} %: {{ formatEuros(row.baseCents) }}</span>
+                    <span>IVA: {{ formatEuros(row.vatCents) }}</span>
+                </div>
+            }
+            <div class="flex justify-between py-1 border-t border-surface mt-2">
+                <span>Neto</span><span data-testid="quote-net">{{ formatEuros(shownTotals().netCents) }}</span>
+            </div>
+            <div class="flex justify-between py-1">
+                <span>IVA</span><span data-testid="quote-vat">{{ formatEuros(shownTotals().vatCents) }}</span>
+            </div>
+            <div class="flex justify-between py-1 font-semibold text-lg">
+                <span>Total</span><span data-testid="quote-total">{{ formatEuros(shownTotals().totalCents) }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-wrap gap-3">
+        @if (!readOnly()) {
+            <p-button label="Guardar" icon="pi pi-save" [loading]="busy()" [disabled]="busy() || (submitted() && !formValid())" data-testid="quote-save" (onClick)="save()" />
+        }
+        @if (showSend()) {
+            <p-button label="Enviar" icon="pi pi-send" severity="success" [disabled]="busy() || !canSend()" data-testid="quote-send" (onClick)="run('send')" />
+            @if (dirty() && !readOnly()) {
+                <small class="self-center text-muted-color" data-testid="quote-send-hint">Guarda los cambios antes de enviarlo.</small>
+            }
+        }
+        @if (showDecide()) {
+            <p-button label="Aceptar" icon="pi pi-check" severity="success" [disabled]="busy()" data-testid="quote-accept" (onClick)="run('accept')" />
+            <p-button label="Rechazar" icon="pi pi-times" severity="danger" [outlined]="true" [disabled]="busy()" data-testid="quote-reject" (onClick)="run('reject')" />
+        }
+        @if (showDelete()) {
+            <p-button label="Eliminar" icon="pi pi-trash" severity="danger" [text]="true" [disabled]="busy()" data-testid="quote-delete" (onClick)="remove()" />
+        }
+        <p-button label="Volver" icon="pi pi-arrow-left" severity="secondary" [text]="true" routerLink="/quotes" />
+    </div>
+</div>
