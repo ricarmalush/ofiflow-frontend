@@ -24,6 +24,19 @@
         <p-message severity="error" styleClass="mb-2" data-testid="quote-field-error">{{ error.message }}</p-message>
     }
 
+    @if (showProfileNotice()) {
+        <p-message severity="warn" styleClass="mb-4" data-testid="quote-profile-notice">
+            @if (canManageCompany()) {
+                <span>
+                    Faltan los datos de tu empresa (nombre fiscal, NIF y dirección) para generar el PDF.
+                    <a routerLink="/company" class="font-medium underline" data-testid="quote-profile-link">Completar los datos de la empresa</a>
+                </span>
+            } @else {
+                <span data-testid="quote-profile-ask">Faltan los datos de la empresa para generar el PDF. Pídele a un administrador que los complete.</span>
+            }
+        </p-message>
+    }
+
     @if (latest()) {
         <p-message severity="warn" styleClass="mb-4" data-testid="quote-conflict">
             <div class="flex flex-wrap items-center gap-3">
@@ -248,6 +261,22 @@
             <p-button label="Enviar" icon="pi pi-send" severity="success" [disabled]="busy() || !canSend()" data-testid="quote-send" (onClick)="run('send')" />
             @if (dirty() && !readOnly()) {
                 <small class="self-center text-muted-color" data-testid="quote-send-hint">Guarda los cambios antes de enviarlo.</small>
+            }
+        }
+        @if (showPdf()) {
+            <p-button
+                [label]="downloadingPdf() ? 'Generando…' : 'Descargar PDF'"
+                icon="pi pi-file-pdf"
+                severity="secondary"
+                [loading]="downloadingPdf()"
+                [disabled]="!canDownloadPdf()"
+                data-testid="quote-pdf"
+                (onClick)="downloadPdf()"
+            />
+            @if (dirty() && !readOnly()) {
+                <small class="self-center text-muted-color" data-testid="quote-pdf-hint">Guarda los cambios antes de descargar el PDF.</small>
+            } @else if (status() === 'Draft') {
+                <small class="self-center text-muted-color" data-testid="quote-pdf-draft-note">El PDF de un borrador lleva la marca BORRADOR.</small>
             }
         }
         @if (showDecide()) {

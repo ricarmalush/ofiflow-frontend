@@ -6,6 +6,30 @@ import { toOperationResult } from '../../../core/utils/http-result.util';
 import { PagedResult, Quote, QuoteInput, QuoteListItem, QuoteStatus, QuoteTransition } from '../../../shared/models/quote.model';
 import { OperationResult } from '../../../shared/models/result.model';
 
+// El PDF ya descargado: el fichero y el nombre que dijo la API (solo si tiene la forma esperada; si no, null y quien llama pone el suyo).
+export interface QuotePdf {
+    blob: Blob;
+    fileName: string | null;
+}
+
+// El nombre que la API da a la descarga (spec 025 R15, D11) es solo el número: «presupuesto-P-0012.pdf». No se usa nada que no tenga exactamente esa forma: un nombre de fichero que venga
+// de fuera no puede llevar una ruta, una extensión ni texto de nadie.
+const PDF_FILE_NAME = /^presupuesto-P-\d{4,10}\.pdf$/;
+
+export function pdfFileNameFrom(contentDisposition: string | null): string | null {
+    if (!contentDisposition) {
+        return null;
+    }
+    for (const part of contentDisposition.split(';')) {
+        const [key, ...rest] = part.trim().split('=');
+        if (key.toLowerCase() === 'filename') {
+            const value = rest.join('=').trim().replace(/^"|"$/g, '');
+            return PDF_FILE_NAME.test(value) ? value : null;
+        }
+    }
+    return null;
+}
+
 export interface QuoteListFilter {
     status: QuoteStatus | null;
     customerId: string | null;
@@ -54,6 +78,22 @@ export class QuoteService {
     // Enviar, aceptar y rechazar son acciones (POST /send, /accept, /reject), no un PUT del estado: la API aplica las reglas de transición y el permiso Quotes.Issue.
     transition(id: string, transition: QuoteTransition): Observable<OperationResult> {
         return toOperationResult(this.http.post<void>(`${this.quoteUrl(id)}/${transition}`, {}));
+    }
+
+    // Descarga el PDF del presupuesto GUARDADO (spec 025). Va con la sesión de siempre (el interceptor), nunca con el token en la URL, y no se guarda en ningún almacenamiento. Si la API
+    // contesta con un error (un 400 con su código, un 404, un 429), el cuerpo llega como un problema normal (el interceptor lee el Blob). Una respuesta que no es un PDF es un fallo.
+    downloadPdf(id: string): Observable<OperationResult<QuotePdf>> {
+        return toOperationResult(
+            this.http.get(`${this.quoteUrl(id)}/pdf`, { responseType: 'blob', observe: 'response' }).pipe(
+                map((response) => {
+                    const blob = response.body;
+                    if (!blob || !blob.type.startsWith('application/pdf')) {
+                        throw new Error('La respuesta no es un PDF.');
+                    }
+                    return { blob, fileName: pdfFileNameFrom(response.headers.get('Content-Disposition')) };
+                })
+            )
+        );
     }
 
     private quoteUrl(id: string): string {

@@ -1,7 +1,7 @@
 import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, switchMap, throwError } from 'rxjs';
+import { Observable, catchError, from, map, switchMap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ProblemDetails } from '../../shared/models/problem-details.model';
 import { FORBIDDEN_CODE, MFA_ENROLLMENT_REQUIRED_CODE, SECURITY_ROUTE, TENANT_SUSPENDED_CODE, TENANT_SUSPENDED_MESSAGE } from '../constants/api-error-codes';
@@ -33,6 +33,27 @@ function isEnrollmentRequired(error: HttpErrorResponse): boolean {
     return error.status === 403 && (error.error as ProblemDetails | null)?.code === MFA_ENROLLMENT_REQUIRED_CODE;
 }
 
+// Una petición que espera un fichero (responseType 'blob', como la descarga del PDF) recibe también el ERROR como un Blob: el JSON del problema (con su código estable) va dentro y nadie lo
+// ve. Sin esto, las decisiones de más abajo, que dependen del código (empresa suspendida, rol sin permiso, segundo factor obligatorio), no se tomarían con una descarga, y la pantalla solo
+// enseñaría un mensaje genérico. Se lee el Blob y el error sigue su camino con el cuerpo ya como objeto, igual que el de cualquier otra petición. Si no es JSON, se deja como texto.
+function readBlobError(error: HttpErrorResponse): Observable<never> {
+    if (!(error.error instanceof Blob)) {
+        return throwError(() => error);
+    }
+    return from(error.error.text()).pipe(
+        map((text) => {
+            let body: unknown = text;
+            try {
+                body = JSON.parse(text);
+            } catch {
+                // Sin JSON (un proxy que devuelve HTML): se queda el texto y la pantalla enseña su mensaje de respaldo.
+            }
+            return new HttpErrorResponse({ error: body, headers: error.headers, status: error.status, statusText: error.statusText, url: error.url ?? undefined });
+        }),
+        switchMap((normalized) => throwError(() => normalized))
+    );
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
     // El token solo viaja a nuestra API. Si se añadiera a cualquier petición, una llamada a un
     // dominio externo (un CDN, un servicio de mapas...) se llevaría la sesión del usuario.
@@ -47,6 +68,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     const currentSession = inject(CurrentSessionService);
 
     return next(withToken(req, authService.getToken())).pipe(
+        catchError(readBlobError),
         catchError((error: HttpErrorResponse) => {
             // La empresa está suspendida (spec 011): ni renovar la sesión ni reintentar sirven de nada,
             // porque la API rechaza cada petición mientras dure. Se cierra la sesión con un aviso que lo

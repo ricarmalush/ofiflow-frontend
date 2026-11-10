@@ -1,4 +1,4 @@
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
@@ -6,16 +6,24 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { CLOCK } from '../../../../core/services/clock';
+import { authInterceptor } from '../../../../core/interceptors/auth.interceptor';
+import { AuthService } from '../../../../core/services/auth';
 import { CurrentSessionService } from '../../../../core/services/current-session';
+import { FileDownloadService } from '../../../../core/services/file-download';
 import { buildAccount } from '../../../../core/testing/fake-account';
 import { buildSessionToken } from '../../../../core/testing/fake-jwt';
 import { TenantRole } from '../../../../shared/models/auth.model';
+import { CompanyProfile, EMPTY_COMPANY_PROFILE } from '../../../../shared/models/company-profile.model';
 import { Quote, QuoteStatus } from '../../../../shared/models/quote.model';
 import { QuoteFormComponent } from './quote-form.component';
 
 const quotesUrl = `${environment.apiUrl}/quotes`;
 const customersUrl = `${environment.apiUrl}/customers`;
 const jobsUrl = `${environment.apiUrl}/jobs`;
+const companyUrl = `${environment.apiUrl}/company/profile`;
+const pdfUrl = `${quotesUrl}/q-1/pdf`;
+
+const completeProfile: CompanyProfile = { legalName: 'Marta Gil Pérez', taxId: '12345678Z', addressLine: 'Calle Mayor 1', postalCode: '28001', city: 'Madrid', province: null, phone: null, email: null, isComplete: true };
 
 const customer = (id: string, name: string) => ({ id, type: 'Person', name, email: null, phone: null, address: null, notes: null });
 const job = (id: string, customerId: string, title: string) => ({ id, customerId, title, description: null, status: 'New', priority: 'Normal', scheduledDate: null, assignedTenantUserId: null, estimatedDurationMinutes: null });
@@ -55,11 +63,20 @@ describe('QuoteFormComponent', () => {
     let component: QuoteFormComponent;
     let messages: jasmine.Spy;
     let confirm: jasmine.Spy;
+    let saveFile: jasmine.Spy;
 
     // Abre /quotes/new o /quotes/q-1 con el rol indicado y responde a las peticiones de la carga.
-    async function open(role: TenantRole, loaded: Quote | null = quote(), permissions?: string[]): Promise<HTMLElement> {
+    // El interceptor (que está en los providers para que el error de una descarga llegue como en producción) lee el token de AuthService: se guarda ahí también.
+    function signIn(): CurrentSessionService {
+        const token = buildSessionToken();
+        TestBed.inject(AuthService).storeSession({ accessToken: token, refreshToken: 'refresh-1', expiresAt: '' });
         const session = TestBed.inject(CurrentSessionService);
-        session.establish(buildSessionToken());
+        session.establish(token);
+        return session;
+    }
+
+    async function open(role: TenantRole, loaded: Quote | null = quote(), permissions?: string[], company: CompanyProfile | 'fails' = completeProfile): Promise<HTMLElement> {
+        const session = signIn();
         session.setAccount(buildAccount({ role, ...(permissions ? { permissions } : {}) }));
 
         harness = await RouterTestingHarness.create();
@@ -70,6 +87,15 @@ describe('QuoteFormComponent', () => {
         }
         if (loaded) {
             httpMock.expectOne(`${quotesUrl}/q-1`).flush(loaded);
+            // Un presupuesto que ya existe pregunta también si la empresa tiene sus datos fiscales (para avisar antes de intentar el PDF).
+            if (session.can('Quotes.Read') && session.can('Company.Read')) {
+                const request = httpMock.expectOne(companyUrl);
+                if (company === 'fails') {
+                    request.flush({ status: 500, detail: 'Error.' }, { status: 500, statusText: 'Server Error' });
+                } else {
+                    request.flush(company);
+                }
+            }
         }
         await settle();
         return harness.routeNativeElement as HTMLElement;
@@ -89,6 +115,7 @@ describe('QuoteFormComponent', () => {
     beforeEach(() => {
         messages = jasmine.createSpy('add');
         confirm = jasmine.createSpy('confirm');
+        saveFile = jasmine.createSpy('save');
         TestBed.configureTestingModule({
             providers: [
                 provideRouter([
@@ -96,8 +123,9 @@ describe('QuoteFormComponent', () => {
                     { path: 'quotes/:id', component: QuoteFormComponent },
                     { path: 'quotes', component: QuoteFormComponent }
                 ]),
-                provideHttpClient(),
+                provideHttpClient(withInterceptors([authInterceptor])),
                 provideHttpClientTesting(),
+                { provide: FileDownloadService, useValue: { save: saveFile } },
                 { provide: MessageService, useValue: { add: messages } },
                 { provide: ConfirmationService, useValue: { confirm } },
                 { provide: CLOCK, useValue: () => new Date(2026, 10, 9, 12, 0) }
@@ -106,7 +134,10 @@ describe('QuoteFormComponent', () => {
         httpMock = TestBed.inject(HttpTestingController);
     });
 
-    afterEach(() => httpMock.verify());
+    afterEach(() => {
+        httpMock.verify();
+        sessionStorage.clear();
+    });
 
     // ===== Un presupuesto nuevo =====
 
@@ -636,14 +667,14 @@ describe('QuoteFormComponent', () => {
     });
 
     it('a quote that does not load shows the message of the API and no form to save', async () => {
-        const session = TestBed.inject(CurrentSessionService);
-        session.establish(buildSessionToken());
+        const session = signIn();
         session.setAccount(buildAccount({ role: 'Owner' }));
         harness = await RouterTestingHarness.create();
         component = await harness.navigateByUrl('/quotes/q-1', QuoteFormComponent);
         httpMock.expectOne(customersUrl).flush([]);
         httpMock.expectOne(jobsUrl).flush([]);
         httpMock.expectOne(`${quotesUrl}/q-1`).flush({ status: 404, detail: 'No se ha encontrado el presupuesto.', code: 'quote.not_found' }, { status: 404, statusText: 'Not Found' });
+        httpMock.expectOne(companyUrl).flush(completeProfile);
         await settle();
 
         expect(component.errorMessage()).toBe('No se ha encontrado el presupuesto.');
@@ -658,5 +689,312 @@ describe('QuoteFormComponent', () => {
         component.save();
 
         expect(httpMock.match(`${quotesUrl}/q-1`).length).toBe(1);
+    });
+
+    // ===== El PDF (spec 025) =====
+
+    const pdfBlob = () => new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+    const disposition = (name: string) => ({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename=${name}` });
+    const problemBlob = (body: unknown) => new Blob([JSON.stringify(body)], { type: 'application/problem+json' });
+    // Leer el Blob de un error es asíncrono: se espera a que la pantalla haya recibido la respuesta, no un tiempo fijo.
+    const untilDone = async () => {
+        for (let i = 0; i < 400 && component.downloadingPdf(); i++) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+    };
+
+    describe('the pdf button', () => {
+        it('is offered for a saved quote to whoever can read quotes (Owner and Employee)', async () => {
+            for (const role of ['Owner', 'Employee'] as TenantRole[]) {
+                const host = await open(role, quote('Sent'));
+
+                expect(button(host, 'quote-pdf'))
+                    .withContext(role)
+                    .not.toBeNull();
+                expect(button(host, 'quote-pdf')?.disabled).withContext(role).toBeFalse();
+                TestBed.resetTestingModule();
+                TestBed.configureTestingModule({
+                    providers: [
+                        provideRouter([{ path: 'quotes/:id', component: QuoteFormComponent }]),
+                        provideHttpClient(withInterceptors([authInterceptor])),
+                        provideHttpClientTesting(),
+                        { provide: FileDownloadService, useValue: { save: saveFile } },
+                        { provide: MessageService, useValue: { add: messages } },
+                        { provide: ConfirmationService, useValue: { confirm } },
+                        { provide: CLOCK, useValue: () => new Date(2026, 10, 9, 12, 0) }
+                    ]
+                });
+                httpMock = TestBed.inject(HttpTestingController);
+            }
+        });
+
+        it('is not offered for a quote that does not exist yet', async () => {
+            const host = await open('Owner', null);
+
+            expect(el(host, 'quote-pdf')).toBeNull();
+        });
+
+        it('is not offered to a role without permission to read quotes, and nothing is asked about the company', async () => {
+            const host = await open('Employee', quote(), ['Customers.Read']);
+
+            expect(el(host, 'quote-pdf')).toBeNull();
+            expect(el(host, 'quote-profile-notice')).toBeNull();
+        });
+
+        it('downloads the saved quote and hands the file to the browser with the name that the API gave', async () => {
+            const host = await open('Owner', quote('Sent', { number: 12 }));
+
+            component.downloadPdf();
+            const req = httpMock.expectOne(pdfUrl);
+            expect(req.request.method).toBe('GET');
+            expect(req.request.responseType).toBe('blob');
+            req.flush(pdfBlob(), { headers: disposition('presupuesto-P-0099.pdf') });
+            await settle();
+
+            expect(saveFile).toHaveBeenCalledTimes(1);
+            // El nombre que dijo la API (P-0099), no el que se construiría con el número del presupuesto (P-0012).
+            expect(saveFile.calls.mostRecent().args[1]).toBe('presupuesto-P-0099.pdf');
+            expect((saveFile.calls.mostRecent().args[0] as Blob).type).toBe('application/pdf');
+            expect(messages).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success', summary: 'PDF generado', detail: 'presupuesto-P-0099.pdf' }));
+            expect(button(host, 'quote-pdf')?.disabled).toBeFalse();
+            expect(component.errorMessage()).toBeNull();
+        });
+
+        it('builds the same name from the number when the API name cannot be read', async () => {
+            await open('Owner', quote('Sent', { number: 7 }));
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(pdfBlob(), { headers: { 'Content-Type': 'application/pdf' } });
+            await settle();
+
+            expect(saveFile.calls.mostRecent().args[1]).toBe('presupuesto-P-0007.pdf');
+        });
+
+        it('never uses a file name from outside that is not the expected shape', async () => {
+            await open('Owner', quote('Sent', { number: 12 }));
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(pdfBlob(), { headers: disposition('../../etc/passwd') });
+            await settle();
+
+            expect(saveFile.calls.mostRecent().args[1]).toBe('presupuesto-P-0012.pdf');
+        });
+
+        it('while it generates the button says so and is disabled; afterwards it comes back', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            component.downloadPdf();
+            await settle();
+            expect(component.downloadingPdf()).toBeTrue();
+            expect(button(host, 'quote-pdf')?.disabled).toBeTrue();
+            expect(text(host, 'quote-pdf')).toContain('Generando');
+
+            httpMock.expectOne(pdfUrl).flush(pdfBlob(), { headers: disposition('presupuesto-P-0012.pdf') });
+            await settle();
+
+            expect(component.downloadingPdf()).toBeFalse();
+            expect(button(host, 'quote-pdf')?.disabled).toBeFalse();
+            expect(text(host, 'quote-pdf')).toContain('Descargar PDF');
+        });
+
+        it('sends exactly one request for two quick clicks', async () => {
+            await open('Owner', quote('Sent'));
+
+            component.downloadPdf();
+            component.downloadPdf();
+
+            expect(httpMock.match(pdfUrl).length).toBe(1);
+        });
+
+        it('is disabled with unsaved changes, with a hint to save first, and nothing is sent', async () => {
+            const host = await open('Owner', quote('Draft'));
+            component.title.set('Cambio sin guardar');
+            await settle();
+
+            expect(button(host, 'quote-pdf')?.disabled).toBeTrue();
+            expect(el(host, 'quote-pdf-hint')).not.toBeNull();
+            component.downloadPdf();
+            httpMock.expectNone(pdfUrl);
+        });
+
+        it('says that the pdf of a draft carries the DRAFT mark, and a sent quote does not say it', async () => {
+            const draft = await open('Owner', quote('Draft'));
+            expect(el(draft, 'quote-pdf-draft-note')).not.toBeNull();
+            expect(el(draft, 'quote-pdf-hint')).toBeNull();
+        });
+
+        it('a sent quote has no note about the draft mark', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            expect(el(host, 'quote-pdf-draft-note')).toBeNull();
+        });
+
+        it('is disabled while another action is running', async () => {
+            const host = await open('Owner', quote('Draft'));
+            component.busy.set(true);
+            await settle();
+
+            expect(button(host, 'quote-pdf')?.disabled).toBeTrue();
+            component.downloadPdf();
+            httpMock.expectNone(pdfUrl);
+        });
+
+        it('asks nothing about the company when the role can read quotes but not the company data (the warning is only for those who can see it)', async () => {
+            const host = await open('Manager', quote('Sent'), ['Quotes.Read', 'Customers.Read']);
+
+            expect(el(host, 'quote-pdf')).not.toBeNull();
+            httpMock.expectNone(companyUrl);
+            expect(el(host, 'quote-profile-notice')).toBeNull();
+        });
+
+        it('asks nothing about the company when the pdf is not offered, even if the role could see the company data', async () => {
+            const host = await open('Manager', quote('Sent'), ['Company.Read', 'Customers.Read']);
+
+            expect(el(host, 'quote-pdf')).toBeNull();
+            httpMock.expectNone(companyUrl);
+        });
+
+        it('does not keep the file in any browser storage', async () => {
+            await open('Owner', quote('Sent'));
+            const before = JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } });
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(pdfBlob(), { headers: disposition('presupuesto-P-0012.pdf') });
+            await settle();
+
+            expect(JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } })).toBe(before);
+        });
+    });
+
+    describe('when the company has no fiscal data', () => {
+        it('warns on load, before any attempt, and the owner gets the link to the company data', async () => {
+            const host = await open('Owner', quote('Sent'), undefined, EMPTY_COMPANY_PROFILE);
+
+            expect(el(host, 'quote-profile-notice')).not.toBeNull();
+            expect((el(host, 'quote-profile-link') as HTMLAnchorElement | null)?.getAttribute('href')).toBe('/company');
+            expect(el(host, 'quote-profile-ask')).toBeNull();
+        });
+
+        it('asks a role that cannot manage the company data to ask an administrator, without a link', async () => {
+            const host = await open('Employee', quote('Sent'), undefined, EMPTY_COMPANY_PROFILE);
+
+            expect(el(host, 'quote-profile-notice')).not.toBeNull();
+            expect(text(host, 'quote-profile-ask')).toContain('administrador');
+            expect(el(host, 'quote-profile-link')).toBeNull();
+        });
+
+        it('shows no warning when the data are complete', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            expect(el(host, 'quote-profile-notice')).toBeNull();
+        });
+
+        it('shows no warning when it could not be asked (the answer failed)', async () => {
+            const host = await open('Owner', quote('Sent'), undefined, 'fails');
+
+            expect(el(host, 'quote-profile-notice')).toBeNull();
+            expect(component.profileComplete()).toBeNull();
+        });
+
+        it('does not ask for the company data on a new quote', async () => {
+            const host = await open('Owner', null);
+
+            httpMock.expectNone(companyUrl);
+            expect(el(host, 'quote-profile-notice')).toBeNull();
+        });
+
+        it('turns the API answer «incomplete data» into the same warning, not into a loose error', async () => {
+            const host = await open('Owner', quote('Sent'));
+            expect(el(host, 'quote-profile-notice')).toBeNull();
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(problemBlob({ status: 400, code: 'quote.company_profile_incomplete', detail: 'Para generar el PDF hay que completar antes los datos de la empresa.' }), { status: 400, statusText: 'Bad Request' });
+            await untilDone();
+            await settle();
+
+            expect(el(host, 'quote-profile-notice')).not.toBeNull();
+            expect(el(host, 'quote-error')).toBeNull();
+            expect(saveFile).not.toHaveBeenCalled();
+            expect(button(host, 'quote-pdf')?.disabled).toBeFalse();
+            expect(component.downloadingPdf()).toBeFalse();
+        });
+    });
+
+    describe('when the download fails', () => {
+        it('shows the text of the API for a quote that no longer exists and lets the person try again', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(problemBlob({ status: 404, code: 'quote.not_found', detail: 'No se ha encontrado el presupuesto.' }), { status: 404, statusText: 'Not Found' });
+            await untilDone();
+            await settle();
+
+            expect(text(host, 'quote-error')).toBe('No se ha encontrado el presupuesto.');
+            expect(saveFile).not.toHaveBeenCalled();
+            expect(button(host, 'quote-pdf')?.disabled).toBeFalse();
+        });
+
+        it('shows the text of the API when too many downloads were asked for', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(problemBlob({ status: 429, code: 'rate_limit.exceeded', detail: 'Demasiadas peticiones. Espera un momento.' }), { status: 429, statusText: 'Too Many Requests', headers: { 'Retry-After': '30' } });
+            await untilDone();
+            await settle();
+
+            expect(text(host, 'quote-error')).toBe('Demasiadas peticiones. Espera un momento.');
+            expect(button(host, 'quote-pdf')?.disabled).toBeFalse();
+        });
+
+        it('shows a fallback message when the answer is not JSON (a proxy)', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(new Blob(['<html>Bad gateway</html>'], { type: 'text/html' }), { status: 502, statusText: 'Bad Gateway' });
+            await untilDone();
+            await settle();
+
+            expect(el(host, 'quote-error')).not.toBeNull();
+            expect(text(host, 'quote-error')).not.toContain('<html>');
+            expect(saveFile).not.toHaveBeenCalled();
+        });
+
+        it('shows the network message when there is no connection', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+            await settle();
+
+            expect(el(host, 'quote-error')).not.toBeNull();
+            expect(saveFile).not.toHaveBeenCalled();
+            expect(button(host, 'quote-pdf')?.disabled).toBeFalse();
+        });
+
+        it('never hands a file that is not a pdf to the browser', async () => {
+            const host = await open('Owner', quote('Sent'));
+
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(new Blob(['<html>login</html>'], { type: 'text/html' }), { headers: { 'Content-Type': 'text/html' } });
+            await settle();
+
+            expect(saveFile).not.toHaveBeenCalled();
+            expect(el(host, 'quote-error')).not.toBeNull();
+        });
+
+        it('clears an old error when a new download starts', async () => {
+            const host = await open('Owner', quote('Sent'));
+            component.downloadPdf();
+            httpMock.expectOne(pdfUrl).flush(problemBlob({ status: 404, code: 'quote.not_found', detail: 'Antiguo.' }), { status: 404, statusText: 'Not Found' });
+            await untilDone();
+            await settle();
+            expect(el(host, 'quote-error')).not.toBeNull();
+
+            component.downloadPdf();
+            await settle();
+
+            expect(el(host, 'quote-error')).toBeNull();
+            httpMock.expectOne(pdfUrl).flush(pdfBlob(), { headers: disposition('presupuesto-P-0012.pdf') });
+        });
     });
 });
