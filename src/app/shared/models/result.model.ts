@@ -8,4 +8,6 @@ export interface OperationResult<TData = void> {
     data?: TData;
     code?: string;
     fieldErrors?: FieldError[];
+    // Los segundos que la API pide esperar (cabecera Retry-After de un 429), si los dijo. Solo para poder decirle a la persona cuánto falta.
+    retryAfterSeconds?: number;
 }

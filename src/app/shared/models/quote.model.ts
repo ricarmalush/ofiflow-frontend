@@ -49,6 +49,8 @@ export interface Quote {
     items: QuoteItem[];
     sentAt: string | null;
     decidedAt: string | null;
+    // El instante del último envío por correo (spec 026): cuándo, nunca a quién. null si nunca se mandó.
+    emailedAt: string | null;
     createdAt: string;
     // La versión de fila (base64): se devuelve al modificar y, si alguien lo cambió mientras tanto, la API no pisa nada.
     version: string;
@@ -134,4 +136,16 @@ export function isQuoteExpired(validUntil: string | null, status: QuoteStatus, t
     }
     const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     return validUntil < todayLocal;
+}
+
+// La dirección a la que se manda un presupuesto por correo (spec 026 R5): UNA sola, de 254 caracteres como mucho, sin espacios, sin caracteres de control y sin nada que separe o envuelva direcciones
+// (coma, punto y coma, ángulos, comillas, paréntesis, corchetes, barra invertida). Es la misma regla que aplica la API: aquí solo evita un viaje de ida y vuelta; quien manda es siempre la API.
+export const QUOTE_EMAIL_RECIPIENT_MAX_LENGTH = 254;
+
+const SINGLE_ADDRESS = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const ADDRESS_FORBIDDEN = /[\u0000-\u001f\u007f-\u009f,;<>"()[\]\\]/;
+
+export function isValidQuoteRecipient(value: string): boolean {
+    const address = value.trim();
+    return address.length <= QUOTE_EMAIL_RECIPIENT_MAX_LENGTH && SINGLE_ADDRESS.test(address) && !ADDRESS_FORBIDDEN.test(address);
 }

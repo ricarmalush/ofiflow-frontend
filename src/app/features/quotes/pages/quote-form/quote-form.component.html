@@ -14,6 +14,9 @@
             @if (expired()) {
                 <p-tag value="Caducado" severity="warn" data-testid="quote-expired" />
             }
+            @if (quote()!.emailedAt; as emailedAt) {
+                <small class="text-muted-color" data-testid="quote-emailed">Enviado por correo el {{ emailedAt | date: 'dd/MM/yyyy HH:mm' }}</small>
+            }
         }
     </div>
 
@@ -279,6 +282,12 @@
                 <small class="self-center text-muted-color" data-testid="quote-pdf-draft-note">El PDF de un borrador lleva la marca BORRADOR.</small>
             }
         }
+        @if (showEmail()) {
+            <p-button label="Enviar por correo" icon="pi pi-envelope" severity="secondary" [disabled]="!canOpenEmail()" data-testid="quote-email" (onClick)="openEmail()" />
+            @if (dirty() && !readOnly()) {
+                <small class="self-center text-muted-color" data-testid="quote-email-hint">Guarda los cambios antes de mandarlo por correo.</small>
+            }
+        }
         @if (showDecide()) {
             <p-button label="Aceptar" icon="pi pi-check" severity="success" [disabled]="busy()" data-testid="quote-accept" (onClick)="run('accept')" />
             <p-button label="Rechazar" icon="pi pi-times" severity="danger" [outlined]="true" [disabled]="busy()" data-testid="quote-reject" (onClick)="run('reject')" />
@@ -289,3 +298,51 @@
         <p-button label="Volver" icon="pi pi-arrow-left" severity="secondary" [text]="true" routerLink="/quotes" />
     </div>
 </div>
+
+<p-dialog [visible]="emailOpen()" (visibleChange)="$event ? emailOpen.set(true) : closeEmail()" header="Enviar por correo" [modal]="true" [closable]="!sendingEmail()" [style]="{ width: '34rem' }" [breakpoints]="{ '640px': '95vw' }">
+    <div class="flex flex-col gap-4" data-testid="quote-email-dialog">
+        @if (emailError()) {
+            <p-message severity="error" data-testid="quote-email-error">{{ emailError() }}</p-message>
+        }
+        <p class="m-0">
+            Se enviará el PDF del presupuesto guardado a la dirección que indiques, con un texto fijo. No cambia el estado del presupuesto y no se guarda la dirección.
+        </p>
+        @if (status() === 'Draft') {
+            <small class="text-muted-color" data-testid="quote-email-draft-note">Es un borrador: el PDF llevará la marca BORRADOR.</small>
+        }
+        <div class="flex flex-col gap-2">
+            <label for="quoteEmailRecipient" class="font-medium">Dirección de correo</label>
+            <input
+                pInputText
+                id="quoteEmailRecipient"
+                type="text"
+                inputmode="email"
+                autocomplete="off"
+                [maxlength]="emailMaxLength"
+                [ngModel]="emailRecipient()"
+                (ngModelChange)="emailRecipient.set($event)"
+                [ngModelOptions]="{ standalone: true }"
+                [invalid]="emailSubmitted() && !recipientValid()"
+                [disabled]="sendingEmail()"
+                data-testid="quote-email-recipient"
+                (keydown.enter)="sendEmail()"
+            />
+            @if (emailSubmitted() && !recipientValid()) {
+                <small class="text-red-500" data-testid="quote-email-recipient-error">Escribe una única dirección de correo válida.</small>
+            } @else if (!emailRecipient()) {
+                <small class="text-muted-color" data-testid="quote-email-no-customer-email">El cliente no tiene un email en su ficha: escríbelo aquí.</small>
+            }
+        </div>
+        <div class="flex justify-end gap-2">
+            <p-button label="Cancelar" severity="secondary" [text]="true" [disabled]="sendingEmail()" data-testid="quote-email-cancel" (onClick)="closeEmail()" />
+            <p-button
+                [label]="sendingEmail() ? 'Enviando…' : 'Enviar'"
+                icon="pi pi-send"
+                [loading]="sendingEmail()"
+                [disabled]="sendingEmail()"
+                data-testid="quote-email-send"
+                (onClick)="sendEmail()"
+            />
+        </div>
+    </div>
+</p-dialog>
