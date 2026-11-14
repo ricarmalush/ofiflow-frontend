@@ -147,5 +147,5 @@ const ADDRESS_FORBIDDEN = /[\u0000-\u001f\u007f-\u009f,;<>"()[\]\\]/;
 
 export function isValidQuoteRecipient(value: string): boolean {
     const address = value.trim();
-    return address.length > 0 && address.length <= QUOTE_EMAIL_RECIPIENT_MAX_LENGTH && SINGLE_ADDRESS.test(address) && !ADDRESS_FORBIDDEN.test(address);
+    return address.length <= QUOTE_EMAIL_RECIPIENT_MAX_LENGTH && SINGLE_ADDRESS.test(address) && !ADDRESS_FORBIDDEN.test(address);
 }

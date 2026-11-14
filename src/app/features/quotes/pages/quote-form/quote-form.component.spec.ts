@@ -1068,6 +1068,15 @@ describe('QuoteFormComponent', () => {
 
                 expect(el(host, 'quote-email')).toBeNull();
             });
+
+            it('even called directly, a role without Quotes.Issue sends nothing (the API would refuse it, but nothing is asked)', async () => {
+                await open('Employee', quote('Sent'));
+                component.emailRecipient.set('cliente@ejemplo.es');
+
+                component.sendEmail();
+
+                expect(component.sendingEmail()).toBeFalse();
+            });
         });
 
         describe('the dialog', () => {
@@ -1084,6 +1093,15 @@ describe('QuoteFormComponent', () => {
 
                 await typeAddress(host, 'otro.contacto@ejemplo.es');
                 expect(component.emailRecipient()).toBe('otro.contacto@ejemplo.es');
+            });
+
+            it('proposes the address of the customer OF THE QUOTE, not the first one in the list', async () => {
+                // c1 (el primero de la lista) tiene email; el presupuesto es de c2, que no tiene: el campo empieza vacío.
+                const host = await open('Owner', quote('Sent', { customerId: 'c2', customerName: 'Luis Gómez' }));
+
+                await openDialog(host);
+
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).value).toBe('');
             });
 
             it('starts empty, with a hint, when the customer has no email', async () => {
