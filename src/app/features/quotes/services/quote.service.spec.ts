@@ -213,4 +213,44 @@ describe('QuoteService', () => {
             }
         });
     });
+
+    describe('sendEmail (spec 026)', () => {
+        it('POSTs only the address, trimmed, to the email route of the quote: no query, no token, no address in the URL', () => {
+            let result: OperationResult<{ emailedAt: string }> | undefined;
+            service.sendEmail('q 1/2', '  cliente@ejemplo.es  ').subscribe((r) => (result = r));
+
+            const req = httpMock.expectOne(`${url}/q%201%2F2/email`);
+            expect(req.request.method).toBe('POST');
+            expect(req.request.body).toEqual({ recipient: 'cliente@ejemplo.es' });
+            expect(req.request.params.keys().length).toBe(0);
+            expect(req.request.url).not.toContain('ejemplo');
+            expect(req.request.url).not.toContain('token');
+            req.flush({ emailedAt: '2026-11-14T12:30:00Z' });
+
+            expect(result?.isSuccess).toBeTrue();
+            expect(result?.data).toEqual({ emailedAt: '2026-11-14T12:30:00Z' });
+        });
+
+        it('turns an error of the API into the usual failure with its code and text', () => {
+            let result: OperationResult<{ emailedAt: string }> | undefined;
+            service.sendEmail('q-1', 'cliente@ejemplo.es').subscribe((r) => (result = r));
+
+            httpMock.expectOne(`${url}/q-1/email`).flush({ status: 502, code: 'quote.email_not_sent', detail: 'No se ha podido mandar.' }, { status: 502, statusText: 'Bad Gateway' });
+
+            expect(result?.isSuccess).toBeFalse();
+            expect(result?.code).toBe('quote.email_not_sent');
+            expect(result?.message).toBe('No se ha podido mandar.');
+            expect(result?.data).toBeUndefined();
+        });
+
+        it('keeps the seconds the API asks to wait on a 429', () => {
+            let result: OperationResult<{ emailedAt: string }> | undefined;
+            service.sendEmail('q-1', 'cliente@ejemplo.es').subscribe((r) => (result = r));
+
+            httpMock.expectOne(`${url}/q-1/email`).flush({ status: 429, code: 'rate_limit.exceeded', detail: 'Demasiadas peticiones.' }, { status: 429, statusText: 'Too Many Requests', headers: { 'Retry-After': '120' } });
+
+            expect(result?.isSuccess).toBeFalse();
+            expect(result?.retryAfterSeconds).toBe(120);
+        });
+    });
 });

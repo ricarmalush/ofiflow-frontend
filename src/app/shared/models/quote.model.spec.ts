@@ -1,4 +1,4 @@
-import { QUOTE_LIMITS, QUOTE_STATUS_LABELS, QuoteStatus, VAT_RATES, canDecideQuote, canEditQuote, canSendQuote, formatQuoteNumber, isQuoteExpired, quoteStatusSeverity } from './quote.model';
+import { QUOTE_LIMITS, QUOTE_STATUS_LABELS, QuoteStatus, VAT_RATES, canDecideQuote, canEditQuote, canSendQuote, formatQuoteNumber, isQuoteExpired, isValidQuoteRecipient, quoteStatusSeverity } from './quote.model';
 
 describe('quote model', () => {
     const statuses: QuoteStatus[] = ['Draft', 'Sent', 'Accepted', 'Rejected'];
@@ -47,6 +47,52 @@ describe('quote model', () => {
         it('compares calendar dates, not instants: the time of day does not matter', () => {
             expect(isQuoteExpired('2026-11-09', 'Draft', new Date(2026, 10, 9, 0, 0))).toBeFalse();
             expect(isQuoteExpired('2026-11-09', 'Draft', new Date(2026, 10, 10, 0, 0))).toBeTrue();
+        });
+    });
+
+    describe('isValidQuoteRecipient (spec 026 R5: one address, nothing that separates or wraps addresses)', () => {
+        it('accepts a plain address, with the surrounding spaces ignored', () => {
+            for (const value of ['cliente@ejemplo.es', 'Ana.Perez+presupuestos@sub.ejemplo.co.uk', 'a@b.co', '  cliente@ejemplo.es  ', 'ñandú@ejemplo.es']) {
+                expect(isValidQuoteRecipient(value)).withContext(value).toBeTrue();
+            }
+        });
+
+        it('refuses what is not exactly one plain address', () => {
+            const refused = [
+                '',
+                '   ',
+                'sin-arroba.es',
+                'sin@punto',
+                'a@@b.es',
+                'a b@ejemplo.es',
+                'uno@ejemplo.es, dos@ejemplo.es',
+                'uno@ejemplo.es,dos@ejemplo.es',
+                'uno@ejemplo.es;dos@ejemplo.es',
+                'uno,dos@ejemplo.es',
+                'Ana <ana@ejemplo.es>',
+                '<ana@ejemplo.es>',
+                '"ana"@ejemplo.es',
+                'ana(comentario)@ejemplo.es',
+                'ana@[127.0.0.1].es',
+                'ana\\@ejemplo.es',
+                'ana@ejemplo.es\r\nBcc: otro@ejemplo.es',
+                'ana\u0000@ejemplo.es',
+                'ana\u0007@ejemplo.es',
+                'ana\u007f@ejemplo.es',
+                'ana\u0085@ejemplo.es'
+            ];
+            for (const value of refused) {
+                expect(isValidQuoteRecipient(value)).withContext(JSON.stringify(value)).toBeFalse();
+            }
+        });
+
+        it('accepts 254 characters and refuses 255', () => {
+            const tail = '@ejemplo.es';
+
+            expect(isValidQuoteRecipient('a'.repeat(254 - tail.length) + tail)).toBeTrue();
+            expect(isValidQuoteRecipient('a'.repeat(255 - tail.length) + tail)).toBeFalse();
+            // Los espacios de los extremos no cuentan para el límite.
+            expect(isValidQuoteRecipient('  ' + 'a'.repeat(254 - tail.length) + tail + '  ')).toBeTrue();
         });
     });
 });

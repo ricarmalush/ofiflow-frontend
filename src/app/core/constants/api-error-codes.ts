@@ -22,5 +22,11 @@ export const QUOTE_CHANGED_MEANWHILE_CODE = 'quote.changed_meanwhile';
 // La empresa no ha guardado su perfil fiscal, así que no hay PDF que generar (spec 025 R3): la pantalla avisa y lleva a «Datos de la empresa». Se decide por el código, nunca por el texto.
 export const QUOTE_COMPANY_PROFILE_INCOMPLETE_CODE = 'quote.company_profile_incomplete';
 
+// Mandar un presupuesto por correo (spec 026). Se deciden por el código, nunca por el texto: el servidor de correo no está configurado (no hay nada que la persona pueda arreglar), el presupuesto no tiene líneas
+// y el servidor de correo no aceptó el mensaje (se puede reintentar, o descargar el PDF y enviarlo a mano).
+export const QUOTE_EMAIL_DISABLED_CODE = 'quote.email_disabled';
+export const QUOTE_EMAIL_REQUIRES_ITEMS_CODE = 'quote.email_requires_items';
+export const QUOTE_EMAIL_NOT_SENT_CODE = 'quote.email_not_sent';
+
 // La pantalla donde se activa el segundo factor: la única a la que puede ir quien debe activarlo y no lo ha hecho (spec 022 D9).
 export const SECURITY_ROUTE = '/account/security';

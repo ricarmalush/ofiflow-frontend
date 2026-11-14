@@ -15,7 +15,7 @@ import { buildSessionToken } from '../../../../core/testing/fake-jwt';
 import { TenantRole } from '../../../../shared/models/auth.model';
 import { CompanyProfile, EMPTY_COMPANY_PROFILE } from '../../../../shared/models/company-profile.model';
 import { Quote, QuoteStatus } from '../../../../shared/models/quote.model';
-import { QuoteFormComponent } from './quote-form.component';
+import { QuoteFormComponent, formatWait } from './quote-form.component';
 
 const quotesUrl = `${environment.apiUrl}/quotes`;
 const customersUrl = `${environment.apiUrl}/customers`;
@@ -25,7 +25,7 @@ const pdfUrl = `${quotesUrl}/q-1/pdf`;
 
 const completeProfile: CompanyProfile = { legalName: 'Marta Gil Pérez', taxId: '12345678Z', addressLine: 'Calle Mayor 1', postalCode: '28001', city: 'Madrid', province: null, phone: null, email: null, isComplete: true };
 
-const customer = (id: string, name: string) => ({ id, type: 'Person', name, email: null, phone: null, address: null, notes: null });
+const customer = (id: string, name: string, email: string | null = null) => ({ id, type: 'Person', name, email, phone: null, address: null, notes: null });
 const job = (id: string, customerId: string, title: string) => ({ id, customerId, title, description: null, status: 'New', priority: 'Normal', scheduledDate: null, assignedTenantUserId: null, estimatedDurationMinutes: null });
 
 // Un presupuesto como lo devolvería la API: 2,5 × 12,34 € al 21 % y 1 × 50 € al 0 % (neto 8085, IVA 648, total 8733).
@@ -51,6 +51,7 @@ const quote = (status: QuoteStatus = 'Draft', overrides: Partial<Quote> = {}): Q
         { id: 'i1', position: 0, description: 'Mano de obra', quantity: 2.5, unitPriceCents: 1234, vatPercent: 21, netCents: 3085 }
     ],
     sentAt: status === 'Draft' ? null : '2026-11-09T10:00:00Z',
+    emailedAt: null,
     decidedAt: status === 'Accepted' || status === 'Rejected' ? '2026-11-10T10:00:00Z' : null,
     createdAt: '2026-11-09T09:00:00Z',
     version: 'VERSION-1',
@@ -64,6 +65,8 @@ describe('QuoteFormComponent', () => {
     let messages: jasmine.Spy;
     let confirm: jasmine.Spy;
     let saveFile: jasmine.Spy;
+    // El email de la ficha del cliente c1 en este test (spec 026: se propone como dirección al mandar el presupuesto por correo).
+    let customerEmail: string | null = null;
 
     // Abre /quotes/new o /quotes/q-1 con el rol indicado y responde a las peticiones de la carga.
     // El interceptor (que está en los providers para que el error de una descarga llegue como en producción) lee el token de AuthService: se guarda ahí también.
@@ -81,7 +84,9 @@ describe('QuoteFormComponent', () => {
 
         harness = await RouterTestingHarness.create();
         component = await harness.navigateByUrl(loaded ? '/quotes/q-1' : '/quotes/new', QuoteFormComponent);
-        httpMock.expectOne(customersUrl).flush([customer('c1', 'Ana Ruiz'), customer('c2', 'Luis Gómez')]);
+        if (session.can('Customers.Read')) {
+            httpMock.expectOne(customersUrl).flush([customer('c1', 'Ana Ruiz', customerEmail), customer('c2', 'Luis Gómez')]);
+        }
         if (session.can('Jobs.Read')) {
             httpMock.expectOne(jobsUrl).flush([job('j1', 'c1', 'Trabajo de Ana'), job('j2', 'c2', 'Trabajo de Luis')]);
         }
@@ -113,6 +118,7 @@ describe('QuoteFormComponent', () => {
     const compact = (value: string | undefined) => value?.replace(/\s/g, ' ');
 
     beforeEach(() => {
+        customerEmail = null;
         messages = jasmine.createSpy('add');
         confirm = jasmine.createSpy('confirm');
         saveFile = jasmine.createSpy('save');
@@ -995,6 +1001,420 @@ describe('QuoteFormComponent', () => {
 
             expect(el(host, 'quote-error')).toBeNull();
             httpMock.expectOne(pdfUrl).flush(pdfBlob(), { headers: disposition('presupuesto-P-0012.pdf') });
+        });
+    });
+
+    describe('mailing the quote (spec 026)', () => {
+        const emailUrl = `${quotesUrl}/q-1/email`;
+        const ana = 'ana.cliente@ejemplo.es';
+
+        const openDialog = async (host: HTMLElement) => {
+            button(host, 'quote-email')?.click();
+            await settle();
+        };
+
+        const typeAddress = async (host: HTMLElement, value: string) => {
+            const input = el(host, 'quote-email-recipient') as HTMLInputElement;
+            input.value = value;
+            input.dispatchEvent(new Event('input'));
+            await settle();
+        };
+
+        const clickSend = async (host: HTMLElement) => {
+            button(host, 'quote-email-send')?.click();
+            await settle();
+        };
+
+        const apiProblem = (status: number, code: string, detail: string) => ({ status, code, detail });
+
+        beforeEach(() => {
+            customerEmail = ana;
+        });
+
+        describe('who is offered it', () => {
+            it('a saved quote offers it to whoever can issue quotes: Owner and Manager, draft or sent', async () => {
+                for (const role of ['Owner', 'Manager'] as TenantRole[]) {
+                    for (const status of ['Draft', 'Sent'] as QuoteStatus[]) {
+                        const host = await open(role, quote(status));
+
+                        expect(button(host, 'quote-email')).withContext(`${role} ${status}`).not.toBeNull();
+                        expect(button(host, 'quote-email')?.disabled).withContext(`${role} ${status}`).toBeFalse();
+                        TestBed.resetTestingModule();
+                        TestBed.configureTestingModule({
+                            providers: [
+                                provideRouter([{ path: 'quotes/:id', component: QuoteFormComponent }]),
+                                provideHttpClient(withInterceptors([authInterceptor])),
+                                provideHttpClientTesting(),
+                                { provide: FileDownloadService, useValue: { save: saveFile } },
+                                { provide: MessageService, useValue: { add: messages } },
+                                { provide: ConfirmationService, useValue: { confirm } },
+                                { provide: CLOCK, useValue: () => new Date(2026, 10, 9, 12, 0) }
+                            ]
+                        });
+                        httpMock = TestBed.inject(HttpTestingController);
+                    }
+                }
+            });
+
+            it('an Employee prepares and downloads the PDF but cannot mail it: committing a price is for Quotes.Issue', async () => {
+                const host = await open('Employee', quote('Sent'));
+
+                expect(el(host, 'quote-email')).toBeNull();
+                expect(button(host, 'quote-pdf')).not.toBeNull();
+            });
+
+            it('is not offered for a quote that does not exist yet', async () => {
+                const host = await open('Owner', null);
+
+                expect(el(host, 'quote-email')).toBeNull();
+            });
+        });
+
+        describe('the dialog', () => {
+            it('opens with the address of the customer card, which can be changed for this mailing', async () => {
+                const host = await open('Owner', quote('Sent'));
+
+                await openDialog(host);
+
+                expect(el(host, 'quote-email-dialog')).not.toBeNull();
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).value).toBe(ana);
+                expect(el(host, 'quote-email-no-customer-email')).toBeNull();
+                // La dirección es el dato de un tercero: el navegador no la recuerda para otros formularios.
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).autocomplete).toBe('off');
+
+                await typeAddress(host, 'otro.contacto@ejemplo.es');
+                expect(component.emailRecipient()).toBe('otro.contacto@ejemplo.es');
+            });
+
+            it('starts empty, with a hint, when the customer has no email', async () => {
+                customerEmail = null;
+                const host = await open('Owner', quote('Sent'));
+
+                await openDialog(host);
+
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).value).toBe('');
+                expect(el(host, 'quote-email-no-customer-email')).not.toBeNull();
+            });
+
+            it('starts empty when the role cannot read customers (the address of the card is not known)', async () => {
+                const host = await open('Manager', quote('Sent'), ['Quotes.Read', 'Quotes.Issue', 'Company.Read']);
+
+                await openDialog(host);
+
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).value).toBe('');
+            });
+
+            it('says that the PDF of a draft carries the DRAFT mark, and a sent quote does not say it', async () => {
+                const draft = await open('Owner', quote('Draft'));
+                await openDialog(draft);
+                expect(el(draft, 'quote-email-draft-note')).not.toBeNull();
+                TestBed.resetTestingModule();
+                TestBed.configureTestingModule({
+                    providers: [
+                        provideRouter([{ path: 'quotes/:id', component: QuoteFormComponent }]),
+                        provideHttpClient(withInterceptors([authInterceptor])),
+                        provideHttpClientTesting(),
+                        { provide: FileDownloadService, useValue: { save: saveFile } },
+                        { provide: MessageService, useValue: { add: messages } },
+                        { provide: ConfirmationService, useValue: { confirm } },
+                        { provide: CLOCK, useValue: () => new Date(2026, 10, 9, 12, 0) }
+                    ]
+                });
+                httpMock = TestBed.inject(HttpTestingController);
+
+                const sent = await open('Owner', quote('Sent'));
+                await openDialog(sent);
+                expect(el(sent, 'quote-email-draft-note')).toBeNull();
+            });
+
+            it('forgets the address when it is closed, and proposes the one of the card again when it is opened again', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+                await typeAddress(host, 'borrar.esto@ejemplo.es');
+
+                button(host, 'quote-email-cancel')?.click();
+                await settle();
+
+                expect(component.emailOpen()).toBeFalse();
+                expect(component.emailRecipient()).toBe('');
+                await openDialog(host);
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).value).toBe(ana);
+            });
+
+            it('limits the length of the field to the 254 characters of an address', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).maxLength).toBe(254);
+            });
+        });
+
+        describe('before sending', () => {
+            it('is disabled with unsaved changes, with a hint to save first, and nothing opens', async () => {
+                const host = await open('Owner', quote('Draft'));
+                component.setLine(0, { description: 'Cambiada' });
+                await settle();
+
+                expect(button(host, 'quote-email')?.disabled).toBeTrue();
+                expect(text(host, 'quote-email-hint')).toBe('Guarda los cambios antes de mandarlo por correo.');
+                component.openEmail();
+                expect(component.emailOpen()).toBeFalse();
+            });
+
+            it('is disabled while another action is running', async () => {
+                const host = await open('Owner', quote('Draft'));
+                component.busy.set(true);
+                await settle();
+
+                expect(button(host, 'quote-email')?.disabled).toBeTrue();
+            });
+
+            it('refuses an invalid address without any request, and says so', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+
+                for (const hostile of ['', '   ', 'sin-arroba', 'uno@ejemplo.es, dos@ejemplo.es', 'uno@ejemplo.es;dos@ejemplo.es', 'Ana <ana@ejemplo.es>', 'a b@ejemplo.es', '"ana"@ejemplo.es', 'ana@ejemplo.es\nBcc: x@y.z']) {
+                    await typeAddress(host, hostile);
+                    await clickSend(host);
+
+                    expect(el(host, 'quote-email-recipient-error')).withContext(hostile).not.toBeNull();
+                }
+                // httpMock.verify() de afterEach: ninguna petición salió.
+                expect(component.sendingEmail()).toBeFalse();
+            });
+
+            it('refuses an address of 255 characters and accepts one of 254', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+                const tail = '@ejemplo.es';
+
+                component.emailRecipient.set('a'.repeat(255 - tail.length) + tail);
+                expect(component.recipientValid()).toBeFalse();
+                component.emailRecipient.set('a'.repeat(254 - tail.length) + tail);
+                expect(component.recipientValid()).toBeTrue();
+                component.emailOpen.set(false);
+                await settle();
+            });
+        });
+
+        describe('sending', () => {
+            it('POSTs only the address to the email route of the quote, and nothing else', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+                await typeAddress(host, '  cliente.final@ejemplo.es  ');
+
+                await clickSend(host);
+
+                const req = httpMock.expectOne(emailUrl);
+                expect(req.request.method).toBe('POST');
+                expect(req.request.body).toEqual({ recipient: 'cliente.final@ejemplo.es' });
+                expect(req.request.params.keys().length).toBe(0);
+                expect(req.request.url).not.toContain('ejemplo');
+                expect(req.request.url).not.toContain('token');
+                req.flush({ emailedAt: '2026-11-14T12:30:00Z' });
+                httpMock.expectOne(`${quotesUrl}/q-1`).flush(quote('Sent'));
+                await settle();
+            });
+
+            it('on success closes the dialog, says so, asks again for the quote and shows when it was mailed', async () => {
+                const host = await open('Owner', quote('Sent'));
+                expect(el(host, 'quote-emailed')).toBeNull();
+                await openDialog(host);
+
+                await clickSend(host);
+                httpMock.expectOne(emailUrl).flush({ emailedAt: '2026-11-14T12:30:00Z' });
+                // Anotar el envío cambia la versión de fila: se vuelve a leer el presupuesto en vez de suponer nada.
+                httpMock.expectOne(`${quotesUrl}/q-1`).flush(quote('Sent', { emailedAt: '2026-11-14T12:30:00Z', version: 'VERSION-2' }));
+                await settle();
+
+                expect(component.emailOpen()).toBeFalse();
+                expect(messages).toHaveBeenCalledWith(jasmine.objectContaining({ severity: 'success', summary: 'Presupuesto enviado por correo', detail: 'P-0012' }));
+                expect(component.quote()?.version).toBe('VERSION-2');
+                expect(text(host, 'quote-emailed')).toMatch(/^Enviado por correo el \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/);
+                expect(component.emailRecipient()).toBe('');
+            });
+
+            it('never shows the address in the toast, and does not keep it in any browser storage', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+                await typeAddress(host, 'dato.personal.ajeno@ejemplo.es');
+                await clickSend(host);
+                httpMock.expectOne(emailUrl).flush({ emailedAt: '2026-11-14T12:30:00Z' });
+                httpMock.expectOne(`${quotesUrl}/q-1`).flush(quote('Sent'));
+                await settle();
+
+                expect(JSON.stringify(messages.calls.allArgs())).not.toContain('dato.personal.ajeno');
+                for (const storage of [localStorage, sessionStorage]) {
+                    for (let i = 0; i < storage.length; i++) {
+                        expect(storage.getItem(storage.key(i) as string)).not.toContain('dato.personal.ajeno');
+                    }
+                }
+                expect(host.textContent).not.toContain('dato.personal.ajeno');
+            });
+
+            it('sends exactly one request for two quick clicks, and the button says it is sending', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+
+                await clickSend(host);
+                expect(text(host, 'quote-email-send')).toContain('Enviando');
+                expect(button(host, 'quote-email-send')?.disabled).toBeTrue();
+                component.sendEmail();
+                component.sendEmail();
+
+                httpMock.expectOne(emailUrl).flush({ emailedAt: '2026-11-14T12:30:00Z' });
+                httpMock.expectOne(`${quotesUrl}/q-1`).flush(quote('Sent'));
+                await settle();
+            });
+
+            it('does not close while it is sending: the result would be lost', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+                await clickSend(host);
+
+                component.closeEmail();
+                await settle();
+
+                expect(component.emailOpen()).toBeTrue();
+                expect(button(host, 'quote-email-cancel')?.disabled).toBeTrue();
+                // Y la x del diálogo desaparece mientras envía: no hay un segundo camino para cerrarlo.
+                expect(host.querySelector('.p-dialog-close-button')).toBeNull();
+                httpMock.expectOne(emailUrl).flush({ emailedAt: '2026-11-14T12:30:00Z' });
+                httpMock.expectOne(`${quotesUrl}/q-1`).flush(quote('Sent'));
+                await settle();
+            });
+
+            it('Enter in the field sends too', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+
+                (el(host, 'quote-email-recipient') as HTMLInputElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+                await settle();
+
+                expect(component.sendingEmail()).toBeTrue();
+                httpMock.expectOne(emailUrl).flush({ emailedAt: '2026-11-14T12:30:00Z' });
+                httpMock.expectOne(`${quotesUrl}/q-1`).flush(quote('Sent'));
+                await settle();
+            });
+        });
+
+        describe('when it fails', () => {
+            const failWith = async (host: HTMLElement, status: number, code: string, detail: string, headers: Record<string, string> = {}) => {
+                await openDialog(host);
+                await clickSend(host);
+                httpMock.expectOne(emailUrl).flush(apiProblem(status, code, detail), { status, statusText: 'Error', headers });
+                await settle();
+            };
+
+            it('shows the text of the API when the mail server is not configured, keeps the dialog open and the address', async () => {
+                const host = await open('Owner', quote('Sent'));
+
+                await failWith(host, 400, 'quote.email_disabled', 'El envío por correo no está configurado en este servidor.');
+
+                expect(text(host, 'quote-email-error')).toBe('El envío por correo no está configurado en este servidor.');
+                expect(el(host, 'quote-email-dialog')).not.toBeNull();
+                expect((el(host, 'quote-email-recipient') as HTMLInputElement).value).toBe(ana);
+                expect(button(host, 'quote-email-send')?.disabled).toBeFalse();
+                expect(component.quote()?.emailedAt).toBeNull();
+            });
+
+            it('shows the text of the API for a quote without lines', async () => {
+                const host = await open('Owner', quote('Draft'));
+
+                await failWith(host, 400, 'quote.email_requires_items', 'Un presupuesto sin líneas no se puede mandar por correo.');
+
+                expect(text(host, 'quote-email-error')).toBe('Un presupuesto sin líneas no se puede mandar por correo.');
+            });
+
+            it('shows the text of the API when the mail server did not accept it, and lets the person try again', async () => {
+                const host = await open('Owner', quote('Sent'));
+
+                await failWith(host, 502, 'quote.email_not_sent', 'No se ha podido mandar el presupuesto por correo. Inténtalo de nuevo.');
+                expect(text(host, 'quote-email-error')).toBe('No se ha podido mandar el presupuesto por correo. Inténtalo de nuevo.');
+
+                // Una vez más: el aviso viejo se borra al empezar y esta vez sale.
+                await clickSend(host);
+                expect(el(host, 'quote-email-error')).toBeNull();
+                httpMock.expectOne(emailUrl).flush({ emailedAt: '2026-11-14T12:30:00Z' });
+                httpMock.expectOne(`${quotesUrl}/q-1`).flush(quote('Sent'));
+                await settle();
+                expect(component.emailOpen()).toBeFalse();
+            });
+
+            it('says how long to wait when the API asks for it (Retry-After), rounding up', async () => {
+                const host = await open('Owner', quote('Sent'));
+
+                await failWith(host, 429, 'rate_limit.exceeded', 'Demasiadas peticiones.', { 'Retry-After': '90' });
+
+                expect(text(host, 'quote-email-error')).toBe('Demasiadas peticiones. Inténtalo de nuevo en 2 minutos.');
+            });
+
+            it('shows the first field error of the API when it refuses the address', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+                await clickSend(host);
+
+                httpMock.expectOne(emailUrl).flush(
+                    { status: 400, code: 'validation.failed', detail: 'La petición no es válida.', errors: [{ field: 'Recipient', code: 'common.email_invalid', message: 'El email no es válido.' }] },
+                    { status: 400, statusText: 'Bad Request' }
+                );
+                await settle();
+
+                expect(text(host, 'quote-email-error')).toBe('El email no es válido.');
+            });
+
+            it('turns «the company has no fiscal data» into the usual warning with its link, and closes the dialog', async () => {
+                const host = await open('Owner', quote('Sent'));
+                expect(el(host, 'quote-profile-notice')).toBeNull();
+
+                await openDialog(host);
+                await clickSend(host);
+                httpMock.expectOne(emailUrl).flush(apiProblem(400, 'quote.company_profile_incomplete', 'Para generar el PDF hay que completar antes los datos de la empresa.'), { status: 400, statusText: 'Bad Request' });
+                await settle();
+
+                expect(component.emailOpen()).toBeFalse();
+                expect(el(host, 'quote-profile-notice')).not.toBeNull();
+                expect(el(host, 'quote-profile-link')).not.toBeNull();
+            });
+
+            it('shows a fallback message when the answer is not JSON (a proxy) and the network message when there is no connection', async () => {
+                const host = await open('Owner', quote('Sent'));
+                await openDialog(host);
+
+                await clickSend(host);
+                httpMock.expectOne(emailUrl).flush('<html>Bad Gateway</html>', { status: 502, statusText: 'Bad Gateway' });
+                await settle();
+                expect(el(host, 'quote-email-error')).not.toBeNull();
+                expect(text(host, 'quote-email-error')).not.toContain('<html>');
+
+                await clickSend(host);
+                httpMock.expectOne(emailUrl).error(new ProgressEvent('error'), { status: 0, statusText: '' });
+                await settle();
+                expect(el(host, 'quote-email-error')).not.toBeNull();
+            });
+
+            it('changes nothing of the quote when it fails: no reload, same version', async () => {
+                const host = await open('Owner', quote('Sent'));
+
+                await failWith(host, 502, 'quote.email_not_sent', 'No se ha podido mandar.');
+
+                expect(component.quote()?.version).toBe('VERSION-1');
+                expect(el(host, 'quote-emailed')).toBeNull();
+            });
+        });
+
+        describe('formatWait', () => {
+            it('says seconds up to a minute, then minutes and then hours, always rounding up', () => {
+                expect(formatWait(1)).toBe('1 segundo');
+                expect(formatWait(59)).toBe('59 segundos');
+                expect(formatWait(60)).toBe('1 minuto');
+                expect(formatWait(61)).toBe('2 minutos');
+                expect(formatWait(90)).toBe('2 minutos');
+                expect(formatWait(3540)).toBe('59 minutos');
+                expect(formatWait(3541)).toBe('1 hora');
+                expect(formatWait(3600)).toBe('1 hora');
+                expect(formatWait(3601)).toBe('2 horas');
+            });
         });
     });
 });

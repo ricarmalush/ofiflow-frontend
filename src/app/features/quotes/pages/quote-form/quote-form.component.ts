@@ -1,8 +1,10 @@
+import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
@@ -19,6 +21,7 @@ import { Customer } from '../../../../shared/models/customer.model';
 import { Job } from '../../../../shared/models/job.model';
 import { FieldError } from '../../../../shared/models/problem-details.model';
 import {
+    QUOTE_EMAIL_RECIPIENT_MAX_LENGTH,
     QUOTE_LIMITS,
     QUOTE_STATUS_LABELS,
     Quote,
@@ -33,6 +36,7 @@ import {
     canSendQuote,
     formatQuoteNumber,
     isQuoteExpired,
+    isValidQuoteRecipient,
     quoteStatusSeverity
 } from '../../../../shared/models/quote.model';
 import { centsToEuros, computeQuoteTotals, eurosToCents, formatEuros, lineNetCents } from '../../../../shared/models/quote-totals';
@@ -40,6 +44,19 @@ import { CompanyService } from '../../../company/services/company.service';
 import { CustomerService } from '../../../customers/services/customer.service';
 import { JobService } from '../../../jobs/services/job.service';
 import { QuoteService } from '../../services/quote.service';
+
+// Cuánto esperar, dicho para una persona: segundos hasta un minuto, luego minutos y luego horas (siempre hacia arriba: «1 minuto» y no «59 segundos» cuando faltan 59,4).
+export function formatWait(seconds: number): string {
+    if (seconds < 60) {
+        return seconds === 1 ? '1 segundo' : `${seconds} segundos`;
+    }
+    const minutes = Math.ceil(seconds / 60);
+    if (minutes < 60) {
+        return minutes === 1 ? '1 minuto' : `${minutes} minutos`;
+    }
+    const hours = Math.ceil(minutes / 60);
+    return hours === 1 ? '1 hora' : `${hours} horas`;
+}
 
 // Una línea mientras se edita: lo que se teclea. El precio va en EUROS (lo que se teclea) y se pasa a céntimos al enviar; nada de esto se manda calculado.
 export interface LineDraft {
@@ -69,7 +86,7 @@ const TRANSITION_TEXT: Record<QuoteTransition, { confirm: string; done: string; 
 @Component({
     selector: 'app-quote-form',
     standalone: true,
-    imports: [FormsModule, RouterModule, ButtonModule, InputTextModule, InputNumberModule, TextareaModule, SelectModule, MessageModule, TagModule],
+    imports: [DatePipe, FormsModule, RouterModule, ButtonModule, DialogModule, InputTextModule, InputNumberModule, TextareaModule, SelectModule, MessageModule, TagModule],
     templateUrl: './quote-form.component.html'
 })
 export class QuoteFormComponent implements OnInit {
@@ -101,6 +118,14 @@ export class QuoteFormComponent implements OnInit {
     // ¿Tiene la empresa sus datos fiscales? null = no se sabe (no se pudo preguntar o no hay permiso para verlos). Sin ellos la API no genera el PDF (spec 025 R3).
     readonly profileComplete = signal<boolean | null>(null);
     readonly downloadingPdf = signal(false);
+
+    // Mandar el presupuesto por correo (spec 026). La dirección vive solo mientras el diálogo está abierto: no va a ningún almacenamiento, a la URL ni al estado de la ruta.
+    readonly emailOpen = signal(false);
+    readonly emailRecipient = signal('');
+    readonly emailSubmitted = signal(false);
+    readonly emailError = signal<string | null>(null);
+    readonly sendingEmail = signal(false);
+    readonly emailMaxLength = QUOTE_EMAIL_RECIPIENT_MAX_LENGTH;
 
     readonly loading = signal(false);
     readonly busy = signal(false);
@@ -200,6 +225,12 @@ export class QuoteFormComponent implements OnInit {
     readonly canDownloadPdf = computed(() => this.showPdf() && !this.dirty() && !this.busy() && !this.downloadingPdf());
     // El aviso de datos incompletos solo cuando se sabe seguro que faltan.
     readonly showProfileNotice = computed(() => this.showPdf() && this.profileComplete() === false);
+    // Mandarlo por correo compromete un precio ante un tercero: lo pide quien puede enviar (Quotes.Issue, spec 026 D7). Como el PDF, es el del presupuesto GUARDADO: no se ofrece con cambios sin guardar.
+    readonly showEmail = computed(() => !this.isNew() && this.canIssue());
+    readonly canOpenEmail = computed(() => this.showEmail() && !this.dirty() && !this.busy() && !this.downloadingPdf() && !this.sendingEmail());
+    readonly recipientValid = computed(() => isValidQuoteRecipient(this.emailRecipient()));
+    // La dirección que se propone es la de la ficha del cliente (se puede cambiar para este envío). Sin Customers.Read no se conoce y el campo empieza vacío.
+    readonly customerEmail = computed(() => this.customers().find((customer) => customer.id === this.quote()?.customerId)?.email ?? null);
     readonly showDelete = computed(() => !this.isNew() && canEditQuote(this.status()) && this.canWrite());
 
     ngOnInit(): void {
@@ -405,6 +436,65 @@ export class QuoteFormComponent implements OnInit {
                 return;
             }
             this.showFailure(result.message);
+        });
+    }
+
+    // ===== Mandar por correo =====
+
+    openEmail(): void {
+        if (!this.canOpenEmail()) {
+            return;
+        }
+        this.emailRecipient.set(this.customerEmail() ?? '');
+        this.emailSubmitted.set(false);
+        this.emailError.set(null);
+        this.emailOpen.set(true);
+    }
+
+    // Cerrar olvida la dirección. Mientras se envía no se cierra: se perdería el resultado.
+    closeEmail(): void {
+        if (this.sendingEmail()) {
+            this.emailOpen.set(true);
+            return;
+        }
+        this.emailOpen.set(false);
+        this.emailRecipient.set('');
+        this.emailSubmitted.set(false);
+        this.emailError.set(null);
+    }
+
+    // La API manda el presupuesto guardado con su plantilla fija: aquí solo viaja la dirección. Un segundo clic mientras el primero está en vuelo no manda nada más.
+    sendEmail(): void {
+        const id = this.quoteId();
+        const quote = this.quote();
+        if (id === null || !quote || !this.canIssue() || this.sendingEmail()) {
+            return;
+        }
+        this.emailSubmitted.set(true);
+        if (!this.recipientValid()) {
+            return;
+        }
+        this.emailError.set(null);
+        this.sendingEmail.set(true);
+
+        this.quoteService.sendEmail(id, this.emailRecipient()).subscribe((result) => {
+            this.sendingEmail.set(false);
+            if (result.isSuccess) {
+                this.closeEmail();
+                this.messageService.add({ severity: 'success', summary: 'Presupuesto enviado por correo', detail: formatQuoteNumber(quote.number) });
+                // Anotar el envío cambia la versión de fila: se vuelve a pedir el presupuesto (con su «enviado por correo el…» y la versión nueva) en vez de suponerlo.
+                this.reload(id);
+                return;
+            }
+            if (result.code === QUOTE_COMPANY_PROFILE_INCOMPLETE_CODE) {
+                // La empresa no tiene sus datos fiscales: se cierra el diálogo y se enseña el aviso con su enlace, como con el PDF.
+                this.closeEmail();
+                this.profileComplete.set(false);
+                return;
+            }
+            // El texto lo pone la API (ya traducido y sin la dirección); un error de campo, el suyo. Si pidió esperar, se dice cuánto.
+            const message = result.fieldErrors?.[0]?.message ?? result.message;
+            this.emailError.set(result.retryAfterSeconds ? `${message} Inténtalo de nuevo en ${formatWait(result.retryAfterSeconds)}.` : message);
         });
     }
 

@@ -14,6 +14,16 @@ export function extractErrorMessage(error: HttpErrorResponse): string {
     return readProblem(error)?.detail || (error.status === 0 ? NETWORK_ERROR_MESSAGE : UNEXPECTED_ERROR_MESSAGE);
 }
 
+// Los segundos de «Retry-After» (un 429): solo un número entero positivo y razonable; cualquier otra cosa (una fecha, un texto, un número enorme) se ignora.
+function readRetryAfter(error: HttpErrorResponse): number | undefined {
+    const value = error.headers?.get('Retry-After');
+    if (!value || !/^\d{1,6}$/.test(value)) {
+        return undefined;
+    }
+    const seconds = Number(value);
+    return seconds > 0 ? seconds : undefined;
+}
+
 // Normaliza cualquier llamada a la API a un OperationResult que nunca lanza.
 export function toOperationResult<T = void>(source: Observable<T>): Observable<OperationResult<T>> {
     return source.pipe(
@@ -24,7 +34,8 @@ export function toOperationResult<T = void>(source: Observable<T>): Observable<O
                 isSuccess: false,
                 message: extractErrorMessage(error),
                 code: problem?.code,
-                fieldErrors: problem?.errors
+                fieldErrors: problem?.errors,
+                retryAfterSeconds: readRetryAfter(error)
             });
         })
     );

@@ -30,6 +30,11 @@ export function pdfFileNameFrom(contentDisposition: string | null): string | nul
     return null;
 }
 
+// Lo único que contesta la API al mandar un presupuesto por correo (spec 026 D14): el instante, en UTC.
+export interface QuoteEmailSent {
+    emailedAt: string;
+}
+
 export interface QuoteListFilter {
     status: QuoteStatus | null;
     customerId: string | null;
@@ -94,6 +99,12 @@ export class QuoteService {
                 })
             )
         );
+    }
+
+    // Manda el presupuesto GUARDADO por correo, con su PDF adjunto (spec 026). Solo viaja la dirección: ni asunto, ni cuerpo, ni importes (la API tiene una plantilla fija y todo sale de sus datos). La respuesta
+    // dice solo cuándo; ni la dirección ni el nombre del fichero vuelven. No cambia el estado del presupuesto. La dirección no va en la URL ni se guarda en ningún sitio.
+    sendEmail(id: string, recipient: string): Observable<OperationResult<QuoteEmailSent>> {
+        return toOperationResult(this.http.post<QuoteEmailSent>(`${this.quoteUrl(id)}/email`, { recipient: recipient.trim() }));
     }
 
     private quoteUrl(id: string): string {
