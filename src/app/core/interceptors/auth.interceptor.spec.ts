@@ -382,3 +382,131 @@ describe('authInterceptor · segundo factor obligatorio (spec 022)', () => {
         expect(navigate).not.toHaveBeenCalled();
     });
 });
+
+describe('authInterceptor · descargas (spec 025)', () => {
+    let http: HttpClient;
+    let httpMock: HttpTestingController;
+    let authService: AuthService;
+    const jobsUrl = `${environment.apiUrl}/jobs`;
+    const refreshUrl = `${environment.apiUrl}/auth/refresh`;
+    const accountUrl = `${environment.apiUrl}/account/me`;
+    const token = buildSessionToken();
+    const newToken = buildSessionToken({ role: 'Admin' });
+
+    beforeEach(() => {
+        sessionStorage.clear();
+        TestBed.configureTestingModule({
+            providers: [provideRouter([]), provideHttpClient(withInterceptors([authInterceptor])), provideHttpClientTesting()]
+        });
+        http = TestBed.inject(HttpClient);
+        httpMock = TestBed.inject(HttpTestingController);
+        authService = TestBed.inject(AuthService);
+        authService.storeSession({ accessToken: token, refreshToken: 'refresh-1', expiresAt: '' });
+    });
+
+    afterEach(() => {
+        httpMock.verify();
+        sessionStorage.clear();
+    });
+
+    // ===== Las descargas (spec 025): el error de una petición que espera un fichero llega como un Blob =====
+    // Leer un Blob es asíncrono: cada test espera a que el error llegue de verdad a quien hizo la petición (o, si no llega, una pequeña pausa).
+
+    const blobOf = (body: unknown) => new Blob([typeof body === 'string' ? body : JSON.stringify(body)], { type: 'application/problem+json' });
+    const pdfUrl = `${environment.apiUrl}/quotes/q-1/pdf`;
+    const pause = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    function failedDownload(): Promise<HttpErrorResponse> {
+        return new Promise((resolve) => {
+            http.get(pdfUrl, { responseType: 'blob' }).subscribe({ error: (e: HttpErrorResponse) => resolve(e) });
+        });
+    }
+
+    it('reads the JSON inside the Blob of a failed download so the error arrives like any other', async () => {
+        const outcome = failedDownload();
+
+        httpMock.expectOne(pdfUrl).flush(blobOf({ status: 400, code: 'quote.company_profile_incomplete', detail: 'Faltan los datos de la empresa.' }), { status: 400, statusText: 'Bad Request' });
+        const error = await outcome;
+
+        expect(error.status).toBe(400);
+        expect(error.error).toEqual({ status: 400, code: 'quote.company_profile_incomplete', detail: 'Faltan los datos de la empresa.' });
+    });
+
+    it('keeps the status, the text and the headers of the original error', async () => {
+        const outcome = failedDownload();
+
+        httpMock.expectOne(pdfUrl).flush(blobOf({ code: 'rate_limit.exceeded' }), { status: 429, statusText: 'Too Many Requests', headers: { 'Retry-After': '30' } });
+        const error = await outcome;
+
+        expect(error.status).toBe(429);
+        expect(error.statusText).toBe('Too Many Requests');
+        expect(error.headers.get('Retry-After')).toBe('30');
+        expect(error.url).toBe(pdfUrl);
+    });
+
+    it('leaves a Blob that is not JSON as text, so the screen shows its fallback message', async () => {
+        const outcome = failedDownload();
+
+        httpMock.expectOne(pdfUrl).flush(new Blob(['<html>Bad gateway</html>'], { type: 'text/html' }), { status: 502, statusText: 'Bad Gateway' });
+        const error = await outcome;
+
+        expect(error.status).toBe(502);
+        expect(error.error).toBe('<html>Bad gateway</html>');
+    });
+
+    it('a download of a suspended company still closes the session (the code was inside the Blob)', async () => {
+        spyOn(authService, 'logout');
+        const outcome = failedDownload();
+
+        httpMock.expectOne(pdfUrl).flush(blobOf({ code: 'tenant.suspended', detail: 'Tu empresa está suspendida.' }), { status: 403, statusText: 'Forbidden' });
+        const error = await outcome;
+
+        expect(authService.logout).toHaveBeenCalledWith('Tu empresa está suspendida.', 'warn');
+        expect(error.status).toBe(403);
+    });
+
+    it('a download refused by role asks for the account again (the code was inside the Blob)', async () => {
+        const outcome = failedDownload();
+
+        httpMock.expectOne(pdfUrl).flush(blobOf({ code: 'auth.forbidden' }), { status: 403, statusText: 'Forbidden' });
+        await outcome;
+
+        httpMock.expectOne(accountUrl).flush(buildAccount());
+    });
+
+    it('a download that needs the second factor takes the person to the security screen (the code was inside the Blob)', async () => {
+        const navigate = spyOn(TestBed.inject(Router), 'navigateByUrl').and.resolveTo(true);
+        const outcome = failedDownload();
+
+        httpMock.expectOne(pdfUrl).flush(blobOf({ code: MFA_ENROLLMENT_REQUIRED_CODE }), { status: 403, statusText: 'Forbidden' });
+        await outcome;
+        httpMock.expectOne(accountUrl).flush(buildAccount({ role: 'Admin', secondFactorEnrollmentRequired: true, secondFactorRequired: true }));
+
+        expect(navigate).toHaveBeenCalledOnceWith(SECURITY_ROUTE);
+    });
+
+    it('a download with an expired token is refreshed and retried like any other call', async () => {
+        let body: unknown;
+        http.get(pdfUrl, { responseType: 'blob' }).subscribe((b) => (body = b));
+
+        httpMock.expectOne(pdfUrl).flush(blobOf({ code: 'auth.unauthorized' }), { status: 401, statusText: 'Unauthorized' });
+        await pause();
+        httpMock.expectOne(refreshUrl).flush({ accessToken: newToken, refreshToken: 'refresh-2', expiresAt: '' });
+        httpMock.expectOne(accountUrl).flush(buildAccount());
+        const retry = httpMock.expectOne(pdfUrl);
+        expect(retry.request.headers.get('Authorization')).toBe(`Bearer ${newToken}`);
+        retry.flush(new Blob(['%PDF-1.7'], { type: 'application/pdf' }));
+
+        expect((body as Blob).type).toBe('application/pdf');
+    });
+
+    it('does not touch the errors of an ordinary JSON call', () => {
+        let error: HttpErrorResponse | undefined;
+        http.get(jobsUrl).subscribe({ error: (e: HttpErrorResponse) => (error = e) });
+
+        httpMock.expectOne(jobsUrl).flush({ code: 'job.not_found' }, { status: 404, statusText: 'Not Found' });
+
+        expect(error?.status).toBe(404);
+        expect(error?.error).toEqual({ code: 'job.not_found' });
+    });
+});

@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { environment } from '../../../../environments/environment';
 import { QuoteInput } from '../../../shared/models/quote.model';
 import { OperationResult } from '../../../shared/models/result.model';
-import { QuoteService } from './quote.service';
+import { QuoteService, QuotePdf, pdfFileNameFrom } from './quote.service';
 
 describe('QuoteService', () => {
     let service: QuoteService;
@@ -120,5 +120,97 @@ describe('QuoteService', () => {
 
         expect(result?.message).toBe('Solo se puede aceptar un presupuesto enviado.');
         expect(result?.code).toBe('quote.cannot_accept');
+    });
+
+    // ===== El PDF (spec 025) =====
+
+    const pdfBlob = () => new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+
+    it('downloads the pdf with a GET as a file, with nothing in the body nor in the query', () => {
+        let result: OperationResult<QuotePdf> | undefined;
+        service.downloadPdf('q 1/2').subscribe((r) => (result = r));
+
+        const req = httpMock.expectOne(`${url}/q%201%2F2/pdf`);
+        expect(req.request.method).toBe('GET');
+        expect(req.request.responseType).toBe('blob');
+        expect(req.request.body).toBeNull();
+        expect(req.request.params.keys().length).toBe(0);
+        expect(req.request.url).not.toContain('token');
+        req.flush(pdfBlob(), { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': "attachment; filename=presupuesto-P-0012.pdf; filename*=UTF-8''presupuesto-P-0012.pdf" } });
+
+        expect(result?.isSuccess).toBeTrue();
+        expect(result?.data?.blob.type).toBe('application/pdf');
+        expect(result?.data?.fileName).toBe('presupuesto-P-0012.pdf');
+    });
+
+    it('gives no file name when the API does not say one the app can read (for example, because of CORS)', () => {
+        let result: OperationResult<QuotePdf> | undefined;
+        service.downloadPdf('q-1').subscribe((r) => (result = r));
+
+        httpMock.expectOne(`${url}/q-1/pdf`).flush(pdfBlob(), { headers: { 'Content-Type': 'application/pdf' } });
+
+        expect(result?.isSuccess).toBeTrue();
+        expect(result?.data?.fileName).toBeNull();
+    });
+
+    it('treats an answer that is not a pdf as a failure, never as a file', () => {
+        let result: OperationResult<QuotePdf> | undefined;
+        service.downloadPdf('q-1').subscribe((r) => (result = r));
+
+        httpMock.expectOne(`${url}/q-1/pdf`).flush(new Blob(['<html>proxy</html>'], { type: 'text/html' }), { headers: { 'Content-Type': 'text/html' } });
+
+        expect(result?.isSuccess).toBeFalse();
+        expect(result?.data).toBeUndefined();
+        expect(result?.message.length).toBeGreaterThan(0);
+    });
+
+    it('turns an error of the API into the usual failure with its code and text', () => {
+        let result: OperationResult<QuotePdf> | undefined;
+        service.downloadPdf('q-1').subscribe((r) => (result = r));
+
+        // Con el cuerpo ya como objeto, que es como lo deja el interceptor tras leer el Blob.
+        httpMock.expectOne(`${url}/q-1/pdf`).error(new ProgressEvent('error'), { status: 400, statusText: 'Bad Request' });
+
+        expect(result?.isSuccess).toBeFalse();
+    });
+
+    describe('pdfFileNameFrom', () => {
+        it('reads the name of a well-formed header', () => {
+            expect(pdfFileNameFrom('attachment; filename=presupuesto-P-0001.pdf')).toBe('presupuesto-P-0001.pdf');
+            expect(pdfFileNameFrom('attachment; filename="presupuesto-P-0012.pdf"')).toBe('presupuesto-P-0012.pdf');
+            expect(pdfFileNameFrom("attachment; filename=presupuesto-P-123456.pdf; filename*=UTF-8''presupuesto-P-123456.pdf")).toBe('presupuesto-P-123456.pdf');
+            expect(pdfFileNameFrom('ATTACHMENT; FileName=presupuesto-P-0007.pdf')).toBe('presupuesto-P-0007.pdf');
+        });
+
+        it('gives null without a header', () => {
+            expect(pdfFileNameFrom(null)).toBeNull();
+            expect(pdfFileNameFrom('')).toBeNull();
+            expect(pdfFileNameFrom('attachment')).toBeNull();
+        });
+
+        it('never accepts a name that is not exactly the expected shape', () => {
+            const hostile = [
+                'attachment; filename=../../etc/passwd',
+                'attachment; filename=presupuesto-P-0012.exe',
+                'attachment; filename=presupuesto-P-0012.pdf.exe',
+                'attachment; filename=../presupuesto-P-0012.pdf',
+                'attachment; filename=x presupuesto-P-0012.pdf',
+                'attachment; filename=C:/presupuesto-P-0012.pdf',
+                'attachment; filename=presupuesto-P-0012.pdf/../x.pdf',
+                'attachment; filename=Presupuesto-P-0012.pdf',
+                'attachment; filename=presupuesto-0012.pdf',
+                'attachment; filename=presupuesto-P-12.pdf',
+                'attachment; filename=presupuesto-P-12345678901.pdf',
+                'attachment; filename=presupuesto-P-00a2.pdf',
+                'attachment; filename=reforma del baño.pdf',
+                'attachment; filename=presupuesto-P-0012.pdf\r\nSet-Cookie: x=1',
+                'attachment; filename=C:\\Windows\\x.pdf',
+                'attachment; filename='
+            ];
+
+            for (const header of hostile) {
+                expect(pdfFileNameFrom(header)).withContext(header).toBeNull();
+            }
+        });
     });
 });

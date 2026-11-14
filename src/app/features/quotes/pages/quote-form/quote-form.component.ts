@@ -10,9 +10,10 @@ import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { forkJoin, of } from 'rxjs';
-import { QUOTE_CHANGED_MEANWHILE_CODE } from '../../../../core/constants/api-error-codes';
+import { QUOTE_CHANGED_MEANWHILE_CODE, QUOTE_COMPANY_PROFILE_INCOMPLETE_CODE } from '../../../../core/constants/api-error-codes';
 import { CLOCK } from '../../../../core/services/clock';
 import { CurrentSessionService } from '../../../../core/services/current-session';
+import { FileDownloadService } from '../../../../core/services/file-download';
 import { escapeHtml } from '../../../../core/utils/escape-html.util';
 import { Customer } from '../../../../shared/models/customer.model';
 import { Job } from '../../../../shared/models/job.model';
@@ -35,6 +36,7 @@ import {
     quoteStatusSeverity
 } from '../../../../shared/models/quote.model';
 import { centsToEuros, computeQuoteTotals, eurosToCents, formatEuros, lineNetCents } from '../../../../shared/models/quote-totals';
+import { CompanyService } from '../../../company/services/company.service';
 import { CustomerService } from '../../../customers/services/customer.service';
 import { JobService } from '../../../jobs/services/job.service';
 import { QuoteService } from '../../services/quote.service';
@@ -80,6 +82,8 @@ export class QuoteFormComponent implements OnInit {
     private confirmationService = inject(ConfirmationService);
     private session = inject(CurrentSessionService);
     private clock = inject(CLOCK);
+    private companyService = inject(CompanyService);
+    private fileDownload = inject(FileDownloadService);
 
     readonly limits = QUOTE_LIMITS;
     readonly vatOptions = VAT_RATES.map((rate) => ({ label: `${rate} %`, value: rate as number }));
@@ -93,6 +97,10 @@ export class QuoteFormComponent implements OnInit {
     readonly latest = signal<Quote | null>(null);
     readonly customers = signal<Customer[]>([]);
     private readonly jobs = signal<Job[]>([]);
+
+    // ¿Tiene la empresa sus datos fiscales? null = no se sabe (no se pudo preguntar o no hay permiso para verlos). Sin ellos la API no genera el PDF (spec 025 R3).
+    readonly profileComplete = signal<boolean | null>(null);
+    readonly downloadingPdf = signal(false);
 
     readonly loading = signal(false);
     readonly busy = signal(false);
@@ -115,6 +123,7 @@ export class QuoteFormComponent implements OnInit {
     readonly isNew = computed(() => this.quoteId() === null);
     readonly canWrite = computed(() => this.session.can('Quotes.Write'));
     readonly canIssue = computed(() => this.session.can('Quotes.Issue'));
+    readonly canManageCompany = computed(() => this.session.can('Company.Manage'));
     readonly status = computed<QuoteStatus>(() => this.quote()?.status ?? 'Draft');
     readonly statusLabel = computed(() => QUOTE_STATUS_LABELS[this.status()]);
     readonly statusSeverity = computed<QuoteTagSeverity>(() => quoteStatusSeverity(this.status()));
@@ -186,6 +195,11 @@ export class QuoteFormComponent implements OnInit {
     readonly canSend = computed(() => canSendQuote(this.status()) && !this.isNew() && this.canIssue() && !this.dirty() && (this.quote()?.items.length ?? 0) > 0);
     readonly showSend = computed(() => !this.isNew() && canSendQuote(this.status()) && this.canIssue());
     readonly showDecide = computed(() => canDecideQuote(this.status()) && this.canIssue());
+    // El PDF es el del presupuesto GUARDADO (spec 025): solo se ofrece cuando ya existe y con Quotes.Read, y no con cambios sin guardar (saldría sin ellos).
+    readonly showPdf = computed(() => !this.isNew() && this.session.can('Quotes.Read'));
+    readonly canDownloadPdf = computed(() => this.showPdf() && !this.dirty() && !this.busy() && !this.downloadingPdf());
+    // El aviso de datos incompletos solo cuando se sabe seguro que faltan.
+    readonly showProfileNotice = computed(() => this.showPdf() && this.profileComplete() === false);
     readonly showDelete = computed(() => !this.isNew() && canEditQuote(this.status()) && this.canWrite());
 
     ngOnInit(): void {
@@ -196,11 +210,14 @@ export class QuoteFormComponent implements OnInit {
         forkJoin({
             customers: this.session.can('Customers.Read') ? this.customerService.list() : of(null),
             jobs: this.session.can('Jobs.Read') ? this.jobService.list() : of(null),
-            quote: id ? this.quoteService.get(id) : of(null)
-        }).subscribe(({ customers, jobs, quote }) => {
+            quote: id ? this.quoteService.get(id) : of(null),
+            // Para avisar antes de que falten los datos fiscales (solo en un presupuesto que ya existe y para quien puede verlos: todo rol con Quotes.Read los ve).
+            company: id && this.session.can('Quotes.Read') && this.session.can('Company.Read') ? this.companyService.get() : of(null)
+        }).subscribe(({ customers, jobs, quote, company }) => {
             this.loading.set(false);
             this.customers.set(customers?.data ?? []);
             this.jobs.set(jobs?.data ?? []);
+            this.profileComplete.set(company?.data ? company.data.isComplete : null);
 
             if (quote && !quote.isSuccess) {
                 this.errorMessage.set(quote.message);
@@ -357,6 +374,37 @@ export class QuoteFormComponent implements OnInit {
             acceptButtonStyleClass: transition === 'reject' ? 'p-button-danger' : undefined,
             rejectButtonStyleClass: 'p-button-secondary p-button-text',
             accept: () => this.apply(id, transition)
+        });
+    }
+
+    // ===== El PDF =====
+
+    // Descarga el PDF del presupuesto guardado (spec 025). La API lo genera con los datos del servidor: aquí no se manda nada más que el id. El botón se deshabilita mientras se genera.
+    downloadPdf(): void {
+        const id = this.quoteId();
+        const quote = this.quote();
+        if (id === null || !quote || !this.canDownloadPdf()) {
+            return;
+        }
+        this.errorMessage.set(null);
+        this.fieldErrors.set([]);
+        this.downloadingPdf.set(true);
+
+        this.quoteService.downloadPdf(id).subscribe((result) => {
+            this.downloadingPdf.set(false);
+            if (result.isSuccess && result.data) {
+                // El nombre de la API (solo si tiene la forma esperada); si no, el mismo que ella daría, construido con el número.
+                const fileName = result.data.fileName ?? `presupuesto-${formatQuoteNumber(quote.number)}.pdf`;
+                this.fileDownload.save(result.data.blob, fileName);
+                this.messageService.add({ severity: 'success', summary: 'PDF generado', detail: fileName });
+                return;
+            }
+            if (result.code === QUOTE_COMPANY_PROFILE_INCOMPLETE_CODE) {
+                // La empresa no tiene sus datos fiscales: se enseña el aviso con su enlace, no un error suelto.
+                this.profileComplete.set(false);
+                return;
+            }
+            this.showFailure(result.message);
         });
     }
 
